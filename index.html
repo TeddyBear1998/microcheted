@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Microcheted — crochet chart designer</title>
+  <meta name="description" content="Free online crochet chart designer: draw stitch diagrams with standard crochet symbols in rows, rounds or filet grids. Save, import, recolor, zoom and export.">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <button class="icon-btn only-mobile" id="btnLeft" title="Stitch library" aria-label="Stitch library">☰</button>
+    <div class="brand"><img src="favicon.svg" alt="" width="26" height="26"><span>Microcheted</span></div>
+    <input id="docName" class="doc-name" aria-label="Chart name" spellcheck="false">
+    <nav class="menu">
+      <div class="dropdown">
+        <button class="btn">File ▾</button>
+        <div class="dropdown-menu">
+          <button data-act="new">New chart…</button>
+          <button data-act="open">Open design… <kbd>Ctrl O</kbd></button>
+          <button data-act="save">Save design <kbd>Ctrl S</kbd></button>
+          <hr>
+          <button data-act="png">Export PNG image</button>
+          <button data-act="svg">Export SVG (vector)</button>
+          <button data-act="print">Print…</button>
+          <hr>
+          <button data-act="sample-rows">Example: rows</button>
+          <button data-act="sample-rounds">Example: rounds</button>
+          <button data-act="sample-filet">Example: filet</button>
+        </div>
+      </div>
+      <button class="icon-btn" data-act="undo" title="Undo (Ctrl Z)" aria-label="Undo">↶</button>
+      <button class="icon-btn" data-act="redo" title="Redo (Ctrl Y)" aria-label="Redo">↷</button>
+      <span class="sep"></span>
+      <button class="icon-btn" data-act="zoomout" title="Zoom out (−)" aria-label="Zoom out">−</button>
+      <button class="zoom-label" id="zoomLabel" data-act="fit" title="Fit chart (0)">100%</button>
+      <button class="icon-btn" data-act="zoomin" title="Zoom in (+)" aria-label="Zoom in">+</button>
+      <button class="icon-btn" data-act="help" title="Help & shortcuts" aria-label="Help">?</button>
+    </nav>
+    <button class="icon-btn only-mobile" id="btnRight" title="Settings" aria-label="Settings">⚙</button>
+  </header>
+
+  <div class="toolbar" role="toolbar" aria-label="Tools">
+    <div class="tool-group" id="tools">
+      <button data-tool="brush" title="Draw stitch (B)"><span>✎</span><small>Draw</small></button>
+      <button data-tool="eraser" title="Erase (E)"><span>⌫</span><small>Erase</small></button>
+      <button data-tool="fill" title="Fill area / round (F)"><span>▧</span><small>Fill</small></button>
+      <button data-tool="picker" title="Pick stitch from chart (I)"><span>⊙</span><small>Pick</small></button>
+      <button data-tool="select" title="Select, copy & paste (S)"><span>⬚</span><small>Select</small></button>
+      <button data-tool="zoom" title="Zoom to region – drag a box (Z)"><span>⌕</span><small>Zoom</small></button>
+      <button data-tool="pan" title="Pan (H, or hold Space / middle mouse)"><span>✋</span><small>Pan</small></button>
+    </div>
+    <div class="tool-group">
+      <div class="current" title="Current stitch">
+        <svg id="curSym" viewBox="-6 -6 112 112" width="34" height="34"></svg>
+        <div><b id="curAbbr">sc</b><small id="curName">single crochet</small></div>
+      </div>
+      <label class="color-chip" title="Stitch color"><input type="color" id="color" value="#1f2937"></label>
+      <button class="icon-btn" data-act="rotl" title="Rotate stitch left (Shift R)" aria-label="Rotate left">⟲</button>
+      <span class="rot-label" id="rotLabel">0°</span>
+      <button class="icon-btn" data-act="rotr" title="Rotate stitch right (R)" aria-label="Rotate right">⟳</button>
+      <div class="seg" id="modSeg" title="Loop to work into">
+        <button data-mod="">Both</button><button data-mod="blo">BLO</button><button data-mod="flo">FLO</button>
+      </div>
+    </div>
+    <div class="tool-group sel-actions" id="selActions" hidden>
+      <button class="btn sm" data-act="copy">Copy</button>
+      <button class="btn sm" data-act="cut">Cut</button>
+      <button class="btn sm" data-act="paste">Paste</button>
+      <button class="btn sm" data-act="del">Delete</button>
+      <button class="btn sm" data-act="fliph">Flip ↔</button>
+      <button class="btn sm" data-act="flipv">Flip ↕</button>
+      <button class="btn sm" data-act="recolor">Recolor</button>
+      <button class="btn sm" data-act="zoomsel">Zoom to</button>
+    </div>
+  </div>
+
+  <main class="workspace">
+    <aside class="panel left" id="leftPanel">
+      <div class="panel-head">
+        <input type="search" id="symSearch" placeholder="Search stitches… (dc, shell, popcorn)" aria-label="Search stitches">
+      </div>
+      <div id="library" class="library"></div>
+    </aside>
+
+    <section class="stage" id="stage">
+      <canvas id="chart" tabindex="0" aria-label="Crochet chart canvas"></canvas>
+      <div class="hint" id="hint" hidden></div>
+      <div class="statusbar"><span id="status">—</span><span id="toolHint"></span></div>
+    </section>
+
+    <aside class="panel right" id="rightPanel">
+      <details open>
+        <summary>Colors</summary>
+        <div class="swatches" id="swatches"></div>
+        <div class="row gap">
+          <button class="btn sm" data-act="recolorType">Recolor all of this stitch</button>
+          <button class="btn sm" data-act="recolorFrom" title="Pick a color on the chart, then every stitch in that color changes to the current color">Replace a color…</button>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Chart</summary>
+        <div class="form">
+          <div class="info" id="modeInfo"></div>
+          <div id="rectSettings">
+            <label>Stitches (columns) <input type="number" id="cols" min="1" max="400"></label>
+            <label>Rows <input type="number" id="rows" min="1" max="400"></label>
+          </div>
+          <div id="roundSettings">
+            <label>Rounds <input type="number" id="rings" min="1" max="80"></label>
+            <label>Stitches in round 1 <input type="number" id="start" min="1" max="200"></label>
+            <label>Added per round <input type="number" id="inc" min="0" max="200"></label>
+            <label class="wide">Custom counts per round <input type="text" id="counts" placeholder="e.g. 6, 12, 18, 18, 24"></label>
+            <label>Center <select id="center"><option value="ring">Magic ring</option><option value="chain">Chain ring</option><option value="none">None</option></select></label>
+          </div>
+          <button class="btn primary sm" data-act="applySize">Apply size</button>
+        </div>
+        <div class="form" id="repeatBox">
+          <div class="info">Repeat the first stitches of a round all the way around it.</div>
+          <label>Round <input type="number" id="repRound" min="1" value="2"></label>
+          <label>Motif length <input type="number" id="repLen" min="1" value="2"></label>
+          <button class="btn sm" data-act="repeatRound">Repeat around</button>
+        </div>
+      </details>
+
+      <details>
+        <summary>Display</summary>
+        <div class="form">
+          <label>Background <input type="color" id="bgColor"></label>
+          <label>Grid lines <input type="color" id="gridColor"></label>
+          <label class="check"><input type="checkbox" id="showGrid"> Show grid</label>
+          <label class="check"><input type="checkbox" id="showNumbers"> Row / round numbers</label>
+          <label class="check"><input type="checkbox" id="exportLegend"> Stitch key in exports</label>
+          <label>Terminology <select id="terms"><option value="us">US (sc, dc…)</option><option value="uk">UK (dc, tr…)</option></select></label>
+        </div>
+      </details>
+
+      <details>
+        <summary>Reference image</summary>
+        <div class="form">
+          <div class="info">Put a photo or scanned chart under the grid and trace it. It is saved in the design file but left out of exports.</div>
+          <button class="btn sm" data-act="loadImage">Choose image…</button>
+          <div id="imgControls" hidden>
+            <label class="check"><input type="checkbox" id="imgShow"> Show</label>
+            <label>Opacity <input type="range" id="imgOpacity" min="0.05" max="1" step="0.05"></label>
+            <label>Size <input type="range" id="imgScale" min="0.1" max="4" step="0.01"></label>
+            <label>Move ↔ <input type="range" id="imgX" min="-1" max="1" step="0.005"></label>
+            <label>Move ↕ <input type="range" id="imgY" min="-1" max="1" step="0.005"></label>
+            <div class="row gap"><button class="btn sm" data-act="zoomImage">Zoom to image</button><button class="btn sm" data-act="removeImage">Remove</button></div>
+          </div>
+        </div>
+      </details>
+
+      <details open>
+        <summary>Stitch key</summary>
+        <div id="legend" class="legend"></div>
+      </details>
+
+      <details id="writtenBox">
+        <summary>Written instructions (draft)</summary>
+        <pre id="written" class="written"></pre>
+        <button class="btn sm" data-act="copyWritten">Copy text</button>
+      </details>
+    </aside>
+  </main>
+
+  <div class="backdrop" id="backdrop"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <input type="file" id="fileOpen" accept=".json,application/json" hidden>
+  <input type="file" id="fileImage" accept="image/*" hidden>
+
+  <dialog id="dlgNew">
+    <form method="dialog" class="dialog">
+      <h2>New chart</h2>
+      <label>Name <input name="name" value="Untitled chart"></label>
+      <fieldset class="modes">
+        <label><input type="radio" name="mode" value="rect" checked><span><b>Rows</b><small>Flat pieces worked back and forth: blankets, scarves, stitch patterns.</small></span></label>
+        <label><input type="radio" name="mode" value="round"><span><b>Rounds</b><small>Worked from the center out: doilies, hats, amigurumi, coasters.</small></span></label>
+        <label><input type="radio" name="mode" value="filet"><span><b>Filet grid</b><small>Rows of filled blocks and open mesh.</small></span></label>
+      </fieldset>
+      <div class="grid2" data-for="rect">
+        <label>Stitches <input type="number" name="cols" value="30" min="1" max="400"></label>
+        <label>Rows <input type="number" name="rows" value="20" min="1" max="400"></label>
+      </div>
+      <div class="grid2" data-for="round" hidden>
+        <label>Rounds <input type="number" name="rings" value="8" min="1" max="80"></label>
+        <label>Stitches in round 1 <input type="number" name="start" value="6" min="1" max="200"></label>
+        <label>Added per round <input type="number" name="inc" value="6" min="0" max="200"></label>
+      </div>
+      <p class="muted small">This replaces the chart on screen. Save it first if you want to keep it.</p>
+      <div class="row end gap">
+        <button value="cancel" class="btn">Cancel</button>
+        <button value="ok" class="btn primary">Create</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlgHelp">
+    <form method="dialog" class="dialog help">
+      <h2>How to use Microcheted</h2>
+      <p>Pick a stitch symbol on the left, then click or drag on the grid to place it. Every cell holds one stitch. Rows read from the bottom up: row 1 runs right to left, row 2 left to right, and so on. Rounds start at the center and run counterclockwise from the marked seam.</p>
+      <div class="cols2">
+        <ul class="keys">
+          <li><kbd>B</kbd> Draw</li><li><kbd>E</kbd> Erase</li><li><kbd>F</kbd> Fill</li>
+          <li><kbd>I</kbd> Pick a stitch from the chart</li><li><kbd>S</kbd> Select</li><li><kbd>Z</kbd> Zoom box</li>
+          <li><kbd>H</kbd> / hold <kbd>Space</kbd> Pan</li><li><kbd>R</kbd> / <kbd>Shift R</kbd> Rotate stitch</li>
+        </ul>
+        <ul class="keys">
+          <li><kbd>Ctrl Z</kbd> / <kbd>Ctrl Y</kbd> Undo / redo</li>
+          <li><kbd>Ctrl C</kbd> <kbd>Ctrl X</kbd> <kbd>Ctrl V</kbd> Copy, cut, paste</li>
+          <li><kbd>Del</kbd> Delete selection</li><li><kbd>Esc</kbd> Stop pasting / clear selection</li>
+          <li><kbd>Wheel</kbd> / pinch Zoom</li><li><kbd>0</kbd> Fit chart</li>
+          <li><kbd>Ctrl S</kbd> / <kbd>Ctrl O</kbd> Save / open</li>
+        </ul>
+      </div>
+      <p>Paste keeps going until you press <kbd>Esc</kbd>, so you can stamp a repeat many times. Your work is autosaved in this browser. Use <b>File → Save design</b> to keep a <code>.json</code> file that you can open again or share.</p>
+      <div class="row end"><button class="btn primary" value="ok">Got it</button></div>
+    </form>
+  </dialog>
+
+  <script src="js/symbols.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
