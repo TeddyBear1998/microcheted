@@ -67,6 +67,12 @@ kbd {
 .icon-btn { width: 34px; height: 34px; padding: 0; font-size: 17px; display: inline-grid; place-items: center; }
 .zoom-label { min-width: 62px; font-variant-numeric: tabular-nums; }
 .only-mobile { display: none; }
+.donate {
+  display: inline-flex; align-items: center; gap: 2px; text-decoration: none; margin-left: 4px;
+  background: #ff5e5b; border-color: #ff5e5b; color: #fff; font-weight: 600;
+}
+.donate:hover { background: #ff5e5b; filter: brightness(1.07); }
+.help a { color: var(--accent); }
 
 .dropdown { position: relative; }
 .dropdown-menu {
@@ -216,6 +222,8 @@ dialog::backdrop { background: rgb(20 15 10 / .45); }
 @media (max-width: 640px) {
   .topbar { padding: 6px 8px; gap: 6px; }
   .menu .sep, .menu [data-act=help] { display: none; }
+  .menu [data-act=zoomin], .menu [data-act=zoomout], .brand { display: none; }
+  .donate { padding: 6px 10px; } .donate .label { display: none; }
   .toolbar { padding: 4px 8px; gap: 6px; overflow-x: auto; flex-wrap: nowrap; }
   .tool-group { flex-wrap: nowrap; }
   #tools button { width: 44px; }
