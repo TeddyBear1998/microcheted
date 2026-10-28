@@ -65,8 +65,13 @@ kbd {
 .btn.sm { padding: 4px 9px; font-size: 13px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
 .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
+.btn.toggle[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
 .icon-btn { width: 34px; height: 34px; padding: 0; font-size: 17px; display: inline-grid; place-items: center; }
 .zoom-label { min-width: 62px; font-variant-numeric: tabular-nums; }
+.lang-select {
+  height: 34px; padding: 0 6px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); cursor: pointer; font-size: 13px; font-weight: 600;
+}
 .only-mobile { display: none; }
 .donate {
   display: inline-flex; align-items: center; gap: 2px; text-decoration: none; margin-left: 4px;
@@ -199,6 +204,7 @@ dialog::backdrop { background: rgb(20 15 10 / .45); }
 .modes span { display: grid; } .modes small { color: var(--muted); }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
 .grid2[hidden] { display: none; }
+.dialog label.check-row { display: flex; align-items: center; gap: 8px; color: var(--ink); }
 .help p { margin: 0; color: var(--ink); }
 .cols2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .keys { margin: 0; padding: 0; list-style: none; display: grid; gap: 5px; font-size: 13px; }

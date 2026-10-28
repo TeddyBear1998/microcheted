@@ -64,15 +64,37 @@
     return d;
   }
 
+  // A knitting cable over front + back stitches, drawn across (front + back) cells.
+  // Right cross: the front stitches travel from lower left to upper right; the back
+  // stitches pass behind them (broken lines), or are shown as dots when purled.
+  function cable(front, back, right, purl = false) {
+    const X = (i) => 50 + 100 * i, at = (bx, tx, t) => [f(bx + (tx - bx) * t), f(80 - 60 * t)];
+    const route = (bx, tx) => `M${bx},96L${bx},80L${tx},20L${tx},4`;
+    let fr = '', bk = '', dots = '';
+    for (let i = 0; i < back; i++) {
+      const bx = right ? X(front + i) : X(i), tx = right ? X(i) : X(front + i);
+      if (purl) {
+        for (const [x, y] of [[bx, 92], at(bx, tx, 0.12), at(bx, tx, 0.88), [tx, 8]]) dots += oval(x, y, 6, 6);
+      } else {
+        const [x1, y1] = at(bx, tx, 0.3), [x2, y2] = at(bx, tx, 0.7);
+        bk += `M${bx},96L${bx},80L${x1},${y1}M${x2},${y2}L${tx},20L${tx},4`;
+      }
+    }
+    for (let i = 0; i < front; i++) fr += right ? route(X(i), X(back + i)) : route(X(back + i), X(i));
+    return dots ? [fr + bk, { d: dots, fill: true }] : [fr + bk];
+  }
+  const knot = 'M40,86L56,42C64,18 36,18 44,42L60,86';   // twisted (through back loop) stitch
+
   const hookFront = 'M50,80C50,93 33,94 33,82';
   const hookBack = 'M50,80C50,93 67,94 67,82';
 
   // ---- symbol table --------------------------------------------------------
   // [id, category, US abbr, US name, parts, extra]
   // parts: path string, or {d, fill:true, alpha}
+  // category ids; display names come from I18N ('cat.<id>')
   const C = {
-    basic: 'Basic stitches', post: 'Post stitches', inc: 'Increases', dec: 'Decreases',
-    tex: 'Clusters & texture', chain: 'Chains, rings & loops', filet: 'Filet crochet', mark: 'Markers',
+    basic: 'basic', post: 'post', inc: 'inc', dec: 'dec', tex: 'tex', chain: 'chain', filet: 'filet', mark: 'mark',
+    kbasic: 'kbasic', kinc: 'kinc', kdec: 'kdec', ktex: 'ktex', kcable: 'kcable',
   };
 
   const defs = [
@@ -144,11 +166,110 @@
     ['smark', C.mark, 'pm', 'place stitch marker', ['M50,88C18,56 28,16 50,16C72,16 82,56 50,88Z' + oval(50, 42, 9, 9)], { marker: true }],
     ['ccmark', C.mark, 'CC', 'color change', [{ d: 'M50,16L84,50L50,84L16,50Z', fill: true }], { marker: true }],
     ['repeat', C.mark, '*', 'repeat marker', [seg(50, 18, 50, 82) + seg(22, 34, 78, 66) + seg(78, 34, 22, 66)], { marker: true }],
+
+    // ---- knitting (chart shows the right side; `ws` is how the square is worked on a wrong-side row)
+    ['k', C.kbasic, 'k', 'knit (blank square)', [], { knit: { ws: ['p', 'kr.'], count: true }, lv: ['lab.', 'labiskais valdziņš (tukša rūtiņa)'] }],
+    ['p', C.kbasic, 'p', 'purl', [{ d: oval(50, 50, 10, 10), fill: true }], { knit: { ws: ['k', 'lab.'], count: true }, lv: ['kr.', 'kreiliskais valdziņš'] }],
+    ['ktbl', C.kbasic, 'k tbl', 'knit through back loop (twisted)', [knot], { knit: { ws: ['p tbl', 'kr. sakr.'] }, lv: ['lab. sakr.', 'sakrustots labiskais (aiz aizmugurējās sienas)'] }],
+    ['ptbl', C.kbasic, 'p tbl', 'purl through back loop (twisted)', [knot, { d: oval(76, 70, 6, 6), fill: true }], { knit: { ws: ['k tbl', 'lab. sakr.'] }, lv: ['kr. sakr.', 'sakrustots kreiliskais (aiz aizmugurējās sienas)'] }],
+    ['sl', C.kbasic, 'sl 1', 'slip 1 purlwise, yarn in back', ['M30,20L50,80L70,20'], { knit: { ws: ['sl 1 wyif', 'noņ. 1 (dz. priekšā)'] }, lv: ['noņ. 1', 'noņemt 1 valdziņu nenoadot (dzija aiz darba)'] }],
+    ['slwyif', C.kbasic, 'sl 1 wyif', 'slip 1 purlwise, yarn in front', ['M30,16L50,70L70,16' + seg(28, 86, 72, 86)], { knit: { ws: ['sl 1 wyib', 'noņ. 1 (dz. aizm.)'] }, lv: ['noņ. 1 (dz. pr.)', 'noņemt 1 valdziņu nenoadot (dzija darba priekšā)'] }],
+
+    ['yo', C.kinc, 'yo', 'yarn over', [oval(50, 50, 22, 22)], { knit: { ws: ['yo', 'ap.'], use: 0 }, uk: ['yfwd', 'yarn forward (yarn over)'], lv: ['ap.', 'apmetiens'] }],
+    ['m1l', C.kinc, 'M1L', 'make 1 left (leans left)', ['M62,84L62,34Q62,14 42,18L28,24'], { knit: { ws: ['M1LP', 'piel. 1 kr.'], make: 1, use: 0 }, mirror: 'm1r', lv: ['piel. 1 k.', 'pielikt 1 valdziņu (sliecas pa kreisi)'] }],
+    ['m1r', C.kinc, 'M1R', 'make 1 right (leans right)', ['M38,84L38,34Q38,14 58,18L72,24'], { knit: { ws: ['M1RP', 'piel. 1 kr.'], make: 1, use: 0 }, mirror: 'm1l', lv: ['piel. 1 l.', 'pielikt 1 valdziņu (sliecas pa labi)'] }],
+    ['kfb', C.kinc, 'kfb', 'knit front and back (1 st becomes 2)', [seg(50, 86, 50, 50) + seg(50, 50, 26, 16) + seg(50, 50, 74, 16)], { knit: { ws: ['pfb', '2 kr. no 1'], make: 2 }, lv: ['2 lab. no 1', 'noadīt 2 labiskos no viena valdziņa'] }],
+
+    ['k2tog', C.kdec, 'k2tog', 'knit 2 together (leans right)', [seg(26, 82, 74, 18)], { knit: { ws: ['p2tog', '2 kop. kr.'], use: 2 }, mirror: 'ssk', lv: ['2 kop. lab.', '2 valdziņus kopā labiski (sliecas pa labi)'] }],
+    ['ssk', C.kdec, 'ssk', 'slip, slip, knit 2 together (leans left)', [seg(74, 82, 26, 18)], { knit: { ws: ['ssp', '2 kop. kr. sakr.'], use: 2 }, mirror: 'k2tog', lv: ['2 kop. lab. sakr.', '2 valdziņus kopā labiski aiz aizmugurējām sienām (sliecas pa kreisi)'] }],
+    ['p2tog', C.kdec, 'p2tog', 'purl 2 together', [seg(26, 82, 74, 18), { d: oval(70, 68, 6, 6), fill: true }], { knit: { ws: ['k2tog', '2 kop. lab.'], use: 2 }, mirror: 'ssp', lv: ['2 kop. kr.', '2 valdziņus kopā kreiliski'] }],
+    ['ssp', C.kdec, 'ssp', 'slip, slip, purl 2 together', [seg(74, 82, 26, 18), { d: oval(30, 68, 6, 6), fill: true }], { knit: { ws: ['ssk', '2 kop. lab. sakr.'], use: 2 }, mirror: 'p2tog', lv: ['2 kop. kr. sakr.', '2 valdziņus kopā kreiliski aiz aizmugurējām sienām'] }],
+    ['k3tog', C.kdec, 'k3tog', 'knit 3 together (leans right)', [seg(26, 82, 74, 18) + seg(50, 82, 74, 18)], { knit: { ws: ['p3tog', '3 kop. kr.'], use: 3 }, mirror: 'sssk', lv: ['3 kop. lab.', '3 valdziņus kopā labiski (sliecas pa labi)'] }],
+    ['sssk', C.kdec, 'sssk', 'slip, slip, slip, knit 3 together (leans left)', [seg(74, 82, 26, 18) + seg(50, 82, 26, 18)], { knit: { ws: ['sssp', '3 kop. kr. sakr.'], use: 3 }, mirror: 'k3tog', lv: ['3 kop. lab. sakr.', '3 valdziņus kopā labiski aiz aizmugurējām sienām (sliecas pa kreisi)'] }],
+    ['cdd', C.kdec, 's2kp', 'centered double decrease (sl 2 together, k1, pass slipped sts over)', [seg(26, 82, 50, 18) + seg(74, 82, 50, 18) + seg(50, 82, 50, 18)], { knit: { ws: ['s2pp', '3 kop. kr. (centrā)'], use: 3 }, uk: ['s2kpo', 'centred double decrease (sl 2 together, k1, pass slipped sts over)'], lv: ['3 kop. centrā', 'centrēts sarukums (2 noņem kopā, 1 lab., pārvelk pāri)'] }],
+
+    ['kbobble', C.ktex, 'MB', 'make bobble', ['M50,16L80,33L80,67L50,84L20,67L20,33Z' + seg(50, 36, 50, 64)], { knit: { ws: ['MB', 'bumb.'] }, lv: ['bumb.', 'bumbulis'] }],
+    ['bo', C.ktex, 'BO', 'bind off', [{ d: oval(50, 50, 28, 13), fill: true }], { knit: { ws: ['BO', 'nol.'], make: 0 }, uk: ['cast off', 'cast off'], lv: ['nol.', 'nolaist (noadīt) valdziņu'] }],
+
+    ['c11r', C.kcable, '1/1 RC', '1/1 right cross (2 sts)', cable(1, 1, true), { span: 2, mirror: 'c11l', knit: {}, uk: ['C2B', 'cable 2 back (1/1 right cross)'], lv: ['1/1 b. l.', 'bize 1/1 pa labi (1 vald. aiz darba)'] }],
+    ['c11l', C.kcable, '1/1 LC', '1/1 left cross (2 sts)', cable(1, 1, false), { span: 2, mirror: 'c11r', knit: {}, uk: ['C2F', 'cable 2 front (1/1 left cross)'], lv: ['1/1 b. k.', 'bize 1/1 pa kreisi (1 vald. darba priekšā)'] }],
+    ['c21rp', C.kcable, '2/1 RPC', '2/1 right purl cross (3 sts)', cable(2, 1, true, true), { span: 3, mirror: 'c21lp', knit: {}, uk: ['T3B', 'twist 3 back (2/1 right purl cross)'], lv: ['2/1 b. l. kr.', 'bize 2/1 pa labi uz kreiliskā fona'] }],
+    ['c21lp', C.kcable, '2/1 LPC', '2/1 left purl cross (3 sts)', cable(2, 1, false, true), { span: 3, mirror: 'c21rp', knit: {}, uk: ['T3F', 'twist 3 front (2/1 left purl cross)'], lv: ['2/1 b. k. kr.', 'bize 2/1 pa kreisi uz kreiliskā fona'] }],
+    ['c22r', C.kcable, '2/2 RC', '2/2 right cross (4 sts)', cable(2, 2, true), { span: 4, mirror: 'c22l', knit: {}, uk: ['C4B', 'cable 4 back (2/2 right cross)'], lv: ['2/2 b. l.', 'bize 2/2 pa labi (2 vald. aiz darba)'] }],
+    ['c22l', C.kcable, '2/2 LC', '2/2 left cross (4 sts)', cable(2, 2, false), { span: 4, mirror: 'c22r', knit: {}, uk: ['C4F', 'cable 4 front (2/2 left cross)'], lv: ['2/2 b. k.', 'bize 2/2 pa kreisi (2 vald. darba priekšā)'] }],
+    ['c33r', C.kcable, '3/3 RC', '3/3 right cross (6 sts)', cable(3, 3, true), { span: 6, mirror: 'c33l', knit: {}, uk: ['C6B', 'cable 6 back (3/3 right cross)'], lv: ['3/3 b. l.', 'bize 3/3 pa labi (3 vald. aiz darba)'] }],
+    ['c33l', C.kcable, '3/3 LC', '3/3 left cross (6 sts)', cable(3, 3, false), { span: 6, mirror: 'c33r', knit: {}, uk: ['C6F', 'cable 6 front (3/3 left cross)'], lv: ['3/3 b. k.', 'bize 3/3 pa kreisi (3 vald. darba priekšā)'] }],
   ];
 
   const MODIFIERS = {
-    blo: { abbr: 'BLO', name: 'worked in back loop only', d: 'M30,98Q50,78 70,98' },
-    flo: { abbr: 'FLO', name: 'worked in front loop only', d: 'M30,84Q50,104 70,84' },
+    blo: { abbr: 'BLO', name: 'worked in back loop only', lv: ['aizm.c.', 'tamborē tikai aizmugurējā cilpā'], d: 'M30,98Q50,78 70,98' },
+    flo: { abbr: 'FLO', name: 'worked in front loop only', lv: ['pr.c.', 'tamborē tikai priekšējā cilpā'], d: 'M30,84Q50,104 70,84' },
+  };
+
+  // Latvian terminology: st.1a. = stabiņš ar 1 apmetienu (US dc), st.2a. = ar 2 apmetieniem (US tr) …
+  const LV = {
+    ch: ['g.c.', 'gaisa cilpa'],
+    slst: ['sav.c.', 'savienojošā cilpa'],
+    sc: ['ī.st.', 'īsais stabiņš'],
+    scp: ['ī.st.', 'īsais stabiņš (+ zīme)'],
+    hdc: ['pst.', 'pusstabiņš ar apmetienu'],
+    dc: ['st.1a.', 'stabiņš ar 1 apmetienu'],
+    tr: ['st.2a.', 'stabiņš ar 2 apmetieniem'],
+    dtr: ['st.3a.', 'stabiņš ar 3 apmetieniem'],
+    trtr: ['st.4a.', 'stabiņš ar 4 apmetieniem'],
+    esc: ['pag.ī.st.', 'pagarināts īsais stabiņš'],
+
+    fphdc: ['pr.pst.', 'reljefais pusstabiņš no priekšpuses'],
+    bphdc: ['aizm.pst.', 'reljefais pusstabiņš no aizmugures'],
+    fpdc: ['pr.st.1a.', 'reljefais stabiņš ar 1 apmetienu no priekšpuses'],
+    bpdc: ['aizm.st.1a.', 'reljefais stabiņš ar 1 apmetienu no aizmugures'],
+    fptr: ['pr.st.2a.', 'reljefais stabiņš ar 2 apmetieniem no priekšpuses'],
+    bptr: ['aizm.st.2a.', 'reljefais stabiņš ar 2 apmetieniem no aizmugures'],
+
+    sc2inc: ['2 ī.st. vienā cilpā', 'palielinājums ar 2 īsajiem stabiņiem'],
+    sc3inc: ['3 ī.st. vienā cilpā', 'palielinājums ar 3 īsajiem stabiņiem'],
+    hdc2inc: ['2 pst. vienā cilpā', 'palielinājums ar 2 pusstabiņiem'],
+    dc2inc: ['2 st.1a. vienā cilpā', 'palielinājums ar 2 stabiņiem ar 1 apmetienu'],
+    dc3inc: ['3 st.1a. vienā cilpā', 'palielinājums ar 3 stabiņiem ar 1 apmetienu'],
+    vst: ['V-st.', 'V stabiņš (st.1a., 1 g.c., st.1a. vienā cilpā)'],
+    shell: ['vēdeklis', 'vēdeklis no 5 st.1a. (vienā cilpā)'],
+
+    sc2tog: ['2 ī.st. kopā', '2 īsie stabiņi kopā (samazinājums)'],
+    sc3tog: ['3 ī.st. kopā', '3 īsie stabiņi kopā (samazinājums)'],
+    hdc2tog: ['2 pst. kopā', '2 pusstabiņi kopā (samazinājums)'],
+    dc2tog: ['2 st.1a. kopā', '2 stabiņi ar 1 apmetienu kopā'],
+    dc3tog: ['3 st.1a. kopā', '3 stabiņi ar 1 apmetienu kopā / 3 stabiņu kopa'],
+    tr2tog: ['2 st.2a. kopā', '2 stabiņi ar 2 apmetieniem kopā'],
+
+    bobble: ['bumbulis', 'bumbulis no 5 st.1a.'],
+    puff: ['kuplais st.', 'kuplais stabiņš (pusstabiņu kopa)'],
+    popcorn: ['popkorns', 'popkorns no 5 st.1a.'],
+    cluster3: ['3 st.1a. kopa', '3 stabiņu ar 1 apmetienu kopa vienā cilpā'],
+    xdc: ['krustoti st.1a.', 'krustoti stabiņi ar 1 apmetienu'],
+    spike: ['iedurtais ī.st.', 'iedurtais (garais) īsais stabiņš'],
+    revsc: ['vēža solis', 'vēža solis (īsie stabiņi pretējā virzienā)'],
+    bullion: ['rullītis', 'rullīša stabiņš'],
+    solomon: ['Zālamana mezgls', 'Zālamana mezgls (gara cilpa)'],
+    loopst: ['cilpu st.', 'cilpu stabiņš'],
+
+    ring: ['burvju gredzens', 'burvju (regulējamais) gredzens'],
+    picot: ['3 g.c. pikots', 'pikots no 3 gaisa cilpām'],
+    ch3sp: ['3 g.c. arka', 'arka / atstarpe no 3 gaisa cilpām'],
+    ch5sp: ['5 g.c. arka', 'arka no 5 gaisa cilpām'],
+    tch: ['pacelšanas g.c.', 'pacelšanas gaisa cilpas'],
+
+    filetopen: ['tukša rūt.', 'tukša filejas rūtiņa (st.1a., 2 g.c.)'],
+    filetblock: ['pilna rūt.', 'pilna filejas rūtiņa'],
+    lacet: ['lacete', 'filejas lacete (3 g.c., ī.st., 3 g.c.)'],
+    filetbar: ['stienītis', 'filejas stienītis (5 g.c.)'],
+
+    nost: ['—', 'nav stabiņa (iekrāsots laukums)'],
+    arrow: ['→', 'darba virziens'],
+    start: ['▶', 'sāc šeit'],
+    fasten: ['nostiprināt', 'nostiprināt un nogriezt dziju'],
+    smark: ['marķ.', 'ielikt marķieri'],
+    ccmark: ['KM', 'krāsas maiņa'],
+    repeat: ['*', 'atkārtojuma zīme'],
   };
 
   // US → UK terminology
@@ -163,24 +284,37 @@
 
   const list = defs.map(([id, cat, abbr, name, parts, extra = {}]) => {
     const p = parts.map((x) => (typeof x === 'string' ? { d: x } : x));
+    const span = extra.span || 1, knit = extra.knit;
     return {
-      id, cat, parts: p, marker: !!extra.marker,
+      id, cat, parts: p, marker: !!extra.marker, span, mirror: extra.mirror || null,
+      craft: extra.marker ? 'any' : knit ? 'knit' : 'crochet',
+      // knitting: stitches used / made, whether runs are written "k4", and the wrong-side reading
+      knit: knit && { use: knit.use ?? span, make: knit.make ?? span, count: !!knit.count, ws: knit.ws || null },
       us: [abbr, name],
-      uk: extra.uk || [toUkAbbr(abbr), toUkName(name)],
+      uk: extra.uk || (knit ? [abbr, name] : [toUkAbbr(abbr), toUkName(name)]),
+      lv: extra.lv || LV[id] || [abbr, name],
     };
   });
   const byId = Object.fromEntries(list.map((s) => [s.id, s]));
   const cats = [...new Set(list.map((s) => s.cat))];
 
+  // viewBox for a symbol thumbnail; cables are several cells wide
+  const viewBox = (sym) => `-6 -6 ${100 * (sym.span || 1) + 12} 112`;
+
   function svgInner(sym, color = 'currentColor', sw = 6) {
+    if (!sym.parts.length) return `<rect x="8" y="8" width="84" height="84" rx="6" fill="none" stroke="${color}" stroke-opacity=".35" stroke-width="${sw * 0.6}"/>`;
     return sym.parts.map((p) => p.fill
       ? `<path d="${p.d}" fill="${color}"${p.alpha ? ` fill-opacity="${p.alpha}"` : ''}/>`
       : `<path d="${p.d}" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round"/>`).join('');
   }
 
   window.MICRO_SYMBOLS = {
-    list, byId, cats, MODIFIERS, svgInner,
-    abbr: (s, terms) => (terms === 'uk' ? s.uk[0] : s.us[0]),
-    name: (s, terms) => (terms === 'uk' ? s.uk[1] : s.us[1]),
+    list, byId, cats, MODIFIERS, svgInner, viewBox,
+    // wrong-side reading of a knitting symbol in the given terms
+    wsAbbr: (s, terms) => (s.knit && s.knit.ws ? s.knit.ws[terms === 'lv' ? 1 : 0] : (s[terms] || s.us)[0]),
+    abbr: (s, terms) => (s[terms] || s.us)[0],
+    name: (s, terms) => (s[terms] || s.us)[1],
+    modAbbr: (m, terms) => (terms === 'lv' ? MODIFIERS[m].lv[0] : MODIFIERS[m].abbr),
+    modName: (m, terms) => (terms === 'lv' ? MODIFIERS[m].lv[1] : MODIFIERS[m].name),
   };
 })();

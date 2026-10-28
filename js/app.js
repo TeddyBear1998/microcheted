@@ -3,6 +3,8 @@
   'use strict';
 
   const S = window.MICRO_SYMBOLS;
+  const YARN = window.MICRO_PREVIEW;
+  const t = window.I18N.t;
   const CELL = 40;            // world units per cell
   const INNER = 40;           // radius of the empty center in round charts
   const STORE_KEY = 'microcheted.autosave.v1';
@@ -21,24 +23,28 @@
   // ---------------------------------------------------------------- document
   function newDoc(o = {}) {
     return Object.assign({
-      app: 'Microcheted', version: 1, name: 'Untitled chart', mode: 'rect',
+      app: 'Microcheted', version: 1, name: t('doc.untitled'), mode: 'rect', craft: 'crochet', knitRound: false, gauge: null,
       cols: 30, rows: 20, rings: 8, start: 6, inc: 6, counts: null, center: 'ring',
       cells: {}, image: null,
-      settings: { bg: '#ffffff', grid: '#d6d3d1', showGrid: true, numbers: true, terms: 'us', exportLegend: true },
+      settings: { bg: '#ffffff', grid: '#d6d3d1', showGrid: true, numbers: true, terms: window.I18N.lang === 'lv' ? 'lv' : 'us', exportLegend: true },
     }, o);
   }
 
   function normalizeDoc(raw) {
-    if (!raw || typeof raw !== 'object' || typeof raw.cells !== 'object') throw new Error('This file is not a Microcheted design.');
+    if (!raw || typeof raw !== 'object' || typeof raw.cells !== 'object') throw Object.assign(new Error(t('err.notDesign')), { known: true });
     const d = newDoc();
     d.name = String(raw.name || d.name).slice(0, 120);
     d.mode = raw.mode === 'round' ? 'round' : 'rect';
+    d.craft = raw.craft === 'knit' && d.mode === 'rect' ? 'knit' : 'crochet';
+    d.knitRound = d.craft === 'knit' && !!raw.knitRound;
     const int = (v, lo, hi, def) => (Number.isFinite(+v) ? clamp(Math.round(+v), lo, hi) : def);
+    if (raw.gauge && +raw.gauge.sts > 0 && +raw.gauge.rows > 0) d.gauge = { sts: int(raw.gauge.sts, 1, 200, 20), rows: int(raw.gauge.rows, 1, 200, 20) };
     d.cols = int(raw.cols, 1, 400, 30); d.rows = int(raw.rows, 1, 400, 20);
     d.rings = int(raw.rings, 1, 80, 8); d.start = int(raw.start, 1, 200, 6); d.inc = int(raw.inc, 0, 200, 6);
     d.counts = Array.isArray(raw.counts) ? raw.counts.map((n) => int(n, 1, 999, 6)).slice(0, 80) : null;
     d.center = ['ring', 'chain', 'none'].includes(raw.center) ? raw.center : 'ring';
     Object.assign(d.settings, raw.settings || {});
+    if (!['us', 'uk', 'lv'].includes(d.settings.terms)) d.settings.terms = 'us';
     for (const [k, v] of Object.entries(raw.cells)) {
       if (!/^\d+,\d+$/.test(k) || !Array.isArray(v) || !S.byId[v[0]]) continue;
       d.cells[k] = [v[0], /^#[0-9a-f]{6}$/i.test(v[1]) ? v[1] : '#1f2937', +v[2] || 0, v[3] === 'blo' || v[3] === 'flo' ? v[3] : ''];
@@ -57,7 +63,7 @@
 
   const st = {
     tool: 'brush', sym: 'dc', color: '#1f2937', rot: 0, mod: '',
-    sel: null, clip: null, pasting: false, hover: null, space: false, pickReplace: false,
+    sel: null, clip: null, pasting: false, hover: null, space: false, pickReplace: false, preview: false,
   };
   const view = { s: 1, x: 0, y: 0, auto: true }; // auto: keep fitting on resize until the user moves the view
   const hist = { undo: [], redo: [] };
@@ -65,6 +71,20 @@
 
   // ---------------------------------------------------------------- geometry
   const key = (a, b) => `${a},${b}`;
+  // Row charts can use the real stitch shape: a cell is as tall as gauge stitches / rows (knitting is ~5:7).
+  const rowH = () => (doc.mode === 'rect' && doc.gauge ? CELL * clamp(doc.gauge.sts / doc.gauge.rows, 0.35, 3) : CELL);
+  const spanOf = (v) => (v && S.byId[v[0]].span) || 1;
+  const MAX_SPAN = 6;
+  // the anchor key of a multi-cell stitch (cable) that covers cell k from the left, if any
+  function coverOf(k) {
+    if (doc.mode !== 'rect') return null;
+    const [a, b] = unkey(k);
+    for (let i = 1; i < MAX_SPAN && a - i >= 0; i++) {
+      const kk = key(a - i, b);
+      if (doc.cells[kk] && spanOf(doc.cells[kk]) > i) return kk;
+    }
+    return null;
+  }
   const unkey = (k) => { const i = k.indexOf(','); return [+k.slice(0, i), +k.slice(i + 1)]; };
 
   function ringN(k) {
@@ -76,7 +96,7 @@
                                : a >= 0 && a < doc.rings && b >= 0 && b < ringN(a);
   }
   function chartBounds() {
-    if (doc.mode === 'rect') return { x: 0, y: 0, w: doc.cols * CELL, h: doc.rows * CELL };
+    if (doc.mode === 'rect') return { x: 0, y: 0, w: doc.cols * CELL, h: doc.rows * rowH() };
     const R = INNER + doc.rings * CELL;
     return { x: -R, y: -R, w: 2 * R, h: 2 * R };
   }
@@ -89,7 +109,7 @@
   // round: a = round index from center, b = stitch index counterclockwise from the top seam
   function cellAt(wx, wy) {
     if (doc.mode === 'rect') {
-      const a = Math.floor(wx / CELL), b = doc.rows - 1 - Math.floor(wy / CELL);
+      const a = Math.floor(wx / CELL), b = doc.rows - 1 - Math.floor(wy / rowH());
       return inBounds(a, b) ? { a, b } : null;
     }
     const d = Math.hypot(wx, wy);
@@ -100,12 +120,12 @@
     return { a, b: Math.min(N - 1, Math.floor((t / TAU) * N)) };
   }
   function cellGeom(a, b) {
-    if (doc.mode === 'rect') return { cx: a * CELL + CELL / 2, cy: (doc.rows - 1 - b) * CELL + CELL / 2, size: CELL, rot: 0 };
-    const N = ringN(a), th = -Math.PI / 2 - ((b + 0.5) * TAU) / N, r = INNER + (a + 0.5) * CELL;
-    return { cx: r * Math.cos(th), cy: r * Math.sin(th), size: Math.min(CELL, (TAU * r) / N), rot: th + Math.PI / 2 };
+    if (doc.mode === 'rect') { const h = rowH(); return { cx: a * CELL + CELL / 2, cy: (doc.rows - 1 - b) * h + h / 2, size: Math.min(CELL, h), w: CELL, h, rot: 0 }; }
+    const N = ringN(a), th = -Math.PI / 2 - ((b + 0.5) * TAU) / N, r = INNER + (a + 0.5) * CELL, w = (TAU * r) / N;
+    return { cx: r * Math.cos(th), cy: r * Math.sin(th), size: Math.min(CELL, w), w, h: CELL, rot: th + Math.PI / 2 };
   }
   function traceCell(c, a, b) {
-    if (doc.mode === 'rect') { const g = cellGeom(a, b); c.rect(g.cx - CELL / 2, g.cy - CELL / 2, CELL, CELL); return; }
+    if (doc.mode === 'rect') { const g = cellGeom(a, b); c.rect(g.cx - CELL / 2, g.cy - g.h / 2, CELL, g.h); return; }
     const N = ringN(a), r0 = INNER + a * CELL, r1 = r0 + CELL;
     const t0 = -Math.PI / 2 - (b * TAU) / N, t1 = t0 - TAU / N;
     c.moveTo(r0 * Math.cos(t0), r0 * Math.sin(t0));
@@ -117,7 +137,19 @@
   // ---------------------------------------------------------------- history
   const sameVal = (x, y) => (x && y ? x.join('|') === y.join('|') : x === y);
   function begin() { pending = new Map(); }
+  // Writing into any cell of a cable replaces the whole cable; a new cable clears the cells it covers.
   function setCell(k, v) {
+    const n = spanOf(v);
+    if (n > 1) {
+      const [a, b] = unkey(k);
+      if (doc.mode !== 'rect' || a + n > doc.cols) return;
+      for (let i = 1; i < n; i++) rawSet(key(a + i, b), null);
+    }
+    const c = coverOf(k);
+    if (c) rawSet(c, null);
+    rawSet(k, v);
+  }
+  function rawSet(k, v) {
     const prev = doc.cells[k] || null;
     if (sameVal(prev, v)) return;
     if (!pending.has(k)) pending.set(k, prev);
@@ -175,7 +207,7 @@
     try { localStorage.setItem(STORE_KEY, JSON.stringify(doc)); }
     catch {
       try { localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, doc, { image: null }))); } catch { /* storage unavailable */ }
-      if (!warnedQuota) { warnedQuota = true; toast('Browser storage is full. The reference image is not autosaved, so use File → Save to keep it.'); }
+      if (!warnedQuota) { warnedQuota = true; toast(t('toast.quota')); }
     }
   }
 
@@ -209,10 +241,11 @@
         c.fill();
       },
       image(img, x, y, w, h, opacity) { c.globalAlpha = opacity; c.drawImage(img, x, y, w, h); c.globalAlpha = 1; },
-      symbol(sym, color, cx, cy, size, rot, m) {
+      // stretch widens multi-cell symbols (cables) so they reach across their cells
+      symbol(sym, color, cx, cy, size, rot, m, stretch = 1) {
         const k = (size * SYM_PAD) / 100;
         c.save();
-        c.translate(cx, cy); if (rot) c.rotate(rot); c.scale(k, k); c.translate(-50, -50);
+        c.translate(cx, cy); if (rot) c.rotate(rot); c.scale(k * stretch, k); c.translate(-50 * sym.span, -50);
         c.strokeStyle = color; c.fillStyle = color; c.lineCap = 'round'; c.lineJoin = 'round';
         c.lineWidth = Math.max(5.5, 1 / (lineScale * k));
         if (m && S.MODIFIERS[m]) {
@@ -222,6 +255,16 @@
         for (const p of sym.parts) {
           if (p.fill) { c.globalAlpha = p.alpha || 1; c.fill(p2d(p.d)); c.globalAlpha = 1; } else c.stroke(p2d(p.d));
         }
+        c.restore();
+      },
+      // yarn preview: w is the cell's width along the row/round, h its height
+      yarn(id, color, cx, cy, w, h, rot, m) {
+        const T = c.getTransform(), k = Math.hypot(T.a, T.b), f = 1 + 2 * YARN.PAD, fw = S.byId[id].span + 2 * YARN.PAD;
+        const img = YARN.sprite(id, color, m, Math.max(w, h) * k * f);
+        if (!img) return;
+        c.save();
+        c.translate(cx, cy); if (rot) c.rotate(rot);
+        c.drawImage(img, (-w * fw) / 2, (-h * f) / 2, w * fw, h * f);
         c.restore();
       },
       push(dx, dy) { c.save(); c.translate(dx, dy); },
@@ -250,14 +293,16 @@
       },
       pill(x, y, w, h, fill) { out.push(`<rect x="${n(x)}" y="${n(y)}" width="${n(w)}" height="${n(h)}" rx="${n(h / 2)}" fill="${fill}"/>`); },
       image() { /* reference images are never exported */ },
-      symbol(sym, color, cx, cy, size, rot, m) {
+      yarn() { /* the yarn preview is raster only */ },
+      symbol(sym, color, cx, cy, size, rot, m, stretch = 1) {
+        if (!sym.parts.length) return;
         const k = (size * SYM_PAD) / 100;
         let inner = '';
         if (m && S.MODIFIERS[m]) {
           inner += `<path d="${S.MODIFIERS[m].d}" fill="none" stroke="${color}" stroke-width="5.5" stroke-linecap="round"/>`;
           inner += `<g transform="translate(50 38) scale(0.8) translate(-50 -38)">${S.svgInner(sym, color, 5.5)}</g>`;
         } else inner = S.svgInner(sym, color, 5.5);
-        out.push(`<g transform="translate(${n(cx)} ${n(cy)}) rotate(${n((rot * 180) / Math.PI)}) scale(${n(k * 1000) / 1000}) translate(-50 -50)">${inner}</g>`);
+        out.push(`<g transform="translate(${n(cx)} ${n(cy)}) rotate(${n((rot * 180) / Math.PI)}) scale(${n(k * stretch * 1000) / 1000} ${n(k * 1000) / 1000}) translate(${-50 * sym.span} -50)">${inner}</g>`);
       },
       push(dx, dy) { out.push(`<g transform="translate(${n(dx)} ${n(dy)})">`); },
       pop() { out.push('</g>'); },
@@ -284,11 +329,23 @@
     return { im, x: cx - w / 2, y: cy - h / 2, w, h };
   }
 
+  // dark or light ink, whichever reads better on a filled knitting square
+  function inkOn(hex) {
+    const n = parseInt(hex.slice(1), 16), l = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    return l > 150 ? '#1f2937' : '#ffffff';
+  }
+  function drawStitch(be, v, g, yarn) {
+    const sym = S.byId[v[0]], rot = g.rot + (v[2] * Math.PI) / 180;
+    const cx = g.cx + ((sym.span - 1) * g.w) / 2;   // multi-cell stitches are anchored at their left cell
+    if (yarn) be.yarn(v[0], v[1], cx, g.cy, g.w, g.h, rot, v[3]);
+    else be.symbol(sym, doc.craft === 'knit' ? inkOn(v[1]) : v[1], cx, g.cy, g.size, rot, v[3], sym.span > 1 ? g.w / g.size : 1);
+  }
+
   function drawChart(be, o) {
-    const s = doc.settings, vr = o.vr, zoom = o.zoom;
+    const s = doc.settings, vr = o.vr, zoom = o.zoom, yarn = !!o.preview;
     const numColor = '#8a7f76';
     if (doc.mode === 'rect') {
-      be.fillRect(0, 0, doc.cols * CELL, doc.rows * CELL, s.bg);
+      be.fillRect(0, 0, doc.cols * CELL, doc.rows * rowH(), s.bg);
     } else {
       be.disc(0, 0, INNER + doc.rings * CELL, s.bg);
     }
@@ -297,27 +354,38 @@
     }
 
     if (doc.mode === 'rect') {
+      const RH = rowH();
       const c0 = clamp(Math.floor(vr.x0 / CELL), 0, doc.cols), c1 = clamp(Math.ceil(vr.x1 / CELL), 0, doc.cols);
-      const y0 = clamp(Math.floor(vr.y0 / CELL), 0, doc.rows), y1 = clamp(Math.ceil(vr.y1 / CELL), 0, doc.rows);
-      const W = doc.cols * CELL, H = doc.rows * CELL;
-      if (s.showGrid) {
+      const y0 = clamp(Math.floor(vr.y0 / RH), 0, doc.rows), y1 = clamp(Math.ceil(vr.y1 / RH), 0, doc.rows);
+      const W = doc.cols * CELL, H = doc.rows * RH;
+      // knitting charts show yarn color as the square's fill (colorwork), symbols on top
+      if (doc.craft === 'knit' && !yarn) {
+        for (const k in doc.cells) {
+          const [a, b] = unkey(k), v = doc.cells[k];
+          if (!inBounds(a, b) || v[1].toLowerCase() === s.bg.toLowerCase()) continue;
+          const y = doc.rows - 1 - b, n = Math.min(spanOf(v), doc.cols - a);
+          if (a + n < c0 || a > c1 || y + 1 < y0 || y > y1) continue;
+          be.fillRect(a * CELL, y * RH, n * CELL, RH, v[1]);
+        }
+      }
+      if (s.showGrid && !yarn) {
         const thin = [], thick = [];
         const fine = CELL * zoom >= 5;
         for (let c = c0; c <= c1; c++) {
           const ten = (doc.cols - c) % 10 === 0;
-          if (ten || fine) (ten ? thick : thin).push([c * CELL, y0 * CELL, c * CELL, y1 * CELL]);
+          if (ten || fine) (ten ? thick : thin).push([c * CELL, y0 * RH, c * CELL, y1 * RH]);
         }
         for (let y = y0; y <= y1; y++) {
           const ten = (doc.rows - y) % 10 === 0;
-          if (ten || fine) (ten ? thick : thin).push([c0 * CELL, y * CELL, c1 * CELL, y * CELL]);
+          if (ten || fine) (ten ? thick : thin).push([c0 * CELL, y * RH, c1 * CELL, y * RH]);
         }
         be.lines(thin, s.grid, 1);
         be.lines(thick, shade(s.grid, -0.18), 1.6);
       }
-      be.lines([[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]], shade(s.grid, -0.3), 1.8);
+      if (!yarn) be.lines([[0, 0, W, 0], [W, 0, W, H], [W, H, 0, H], [0, H, 0, 0]], shade(s.grid, -0.3), 1.8);
     } else {
       const R = INNER + doc.rings * CELL;
-      if (s.showGrid) {
+      if (s.showGrid && !yarn) {
         const circ = [];
         for (let k = 0; k <= doc.rings; k++) circ.push([0, 0, INNER + k * CELL]);
         be.circles(circ, s.grid, 1);
@@ -332,41 +400,47 @@
         }
         be.lines(radial, s.grid, 1);
       }
-      be.lines([[0, -INNER, 0, -R]], '#c2410c', 1.6); // start seam
-      be.circles([[0, 0, R]], shade(s.grid, -0.3), 1.8);
-      if (doc.center === 'ring') be.symbol(S.byId.ring, '#8a7f76', 0, 0, INNER * 1.55, 0, '');
+      if (!yarn) {
+        be.lines([[0, -INNER, 0, -R]], '#c2410c', 1.6); // start seam
+        be.circles([[0, 0, R]], shade(s.grid, -0.3), 1.8);
+      }
+      if (doc.center === 'ring' && yarn) be.yarn('ring', '#a8a29e', 0, 0, INNER * 1.3, INNER * 1.3, 0, '');
+      else if (doc.center === 'ring') be.symbol(S.byId.ring, '#8a7f76', 0, 0, INNER * 1.55, 0, '');
       else if (doc.center === 'chain') {
         const n = Math.max(4, Math.min(12, ringN(0))), cr = INNER * 0.55;
         for (let i = 0; i < n; i++) {
           const t = (i * TAU) / n;
-          be.symbol(S.byId.ch, '#8a7f76', cr * Math.cos(t), cr * Math.sin(t), (TAU * cr) / n * 1.15, t + Math.PI / 2, '');
+          const x = cr * Math.cos(t), y = cr * Math.sin(t), len = (TAU * cr) / n * 1.15;
+          if (yarn) be.yarn('ch', '#a8a29e', x, y, len, len * 0.7, t + Math.PI / 2, '');
+          else be.symbol(S.byId.ch, '#8a7f76', x, y, len, t + Math.PI / 2, '');
         }
       }
     }
 
-    // stitches
-    const m = CELL;
+    // stitches; in the yarn preview each row/round is drawn over the one below it
+    const m = CELL * 1.5, todo = [];
     for (const k in doc.cells) {
       const [a, b] = unkey(k);
       if (!inBounds(a, b)) continue;
       const g = cellGeom(a, b);
       if (g.cx < vr.x0 - m || g.cx > vr.x1 + m || g.cy < vr.y0 - m || g.cy > vr.y1 + m) continue;
-      const v = doc.cells[k];
-      be.symbol(S.byId[v[0]], v[1], g.cx, g.cy, g.size, g.rot + (v[2] * Math.PI) / 180, v[3]);
+      todo.push([doc.mode === 'rect' ? b : a, doc.cells[k], g]);
     }
+    if (yarn) todo.sort((x, y) => x[0] - y[0]);
+    for (const [, v, g] of todo) drawStitch(be, v, g, yarn);
 
     // numbering
-    if (s.numbers) {
+    if (s.numbers && !yarn) {
       const fs = CELL * 0.4;
       if (doc.mode === 'rect') {
         for (let b = 0; b < doc.rows; b++) {
-          const y = (doc.rows - 1 - b) * CELL + CELL / 2, n = b + 1;
-          if (n % 2) be.text(String(n), doc.cols * CELL + CELL * 0.5, y, fs, numColor, 'center');
+          const y = (doc.rows - 1 - b + 0.5) * rowH(), n = b + 1;
+          if (n % 2 || doc.knitRound) be.text(String(n), doc.cols * CELL + CELL * 0.5, y, fs, numColor, 'center');
           else be.text(String(n), -CELL * 0.5, y, fs, numColor, 'center');
         }
         for (let a = 0; a < doc.cols; a++) {
           const n = doc.cols - a;
-          if (n === 1 || n % 5 === 0) be.text(String(n), a * CELL + CELL / 2, doc.rows * CELL + CELL * 0.5, fs * 0.85, numColor, 'center');
+          if (n === 1 || n % 5 === 0) be.text(String(n), a * CELL + CELL / 2, doc.rows * rowH() + CELL * 0.5, fs * 0.85, numColor, 'center');
         }
       } else {
         for (let k = 0; k < doc.rings; k++) {
@@ -401,7 +475,7 @@
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.x, dpr * view.y);
     const vr = { x0: -view.x / view.s, y0: -view.y / view.s, x1: (w - view.x) / view.s, y1: (h - view.y) / view.s };
-    drawChart(canvasBackend(ctx, view.s), { vr, zoom: view.s });
+    drawChart(canvasBackend(ctx, view.s), { vr, zoom: view.s, preview: st.preview });
     drawOverlays();
   }
 
@@ -421,15 +495,14 @@
       for (const [da, db, v] of st.clip.cells) {
         const a = st.hover.a + da, b = st.hover.b + db;
         const t = wrapCell(a, b); if (!t) continue;
-        const g = cellGeom(t.a, t.b);
-        be.symbol(S.byId[v[0]], v[1], g.cx, g.cy, g.size, g.rot + (v[2] * Math.PI) / 180, v[3]);
+        drawStitch(be, v, cellGeom(t.a, t.b), st.preview);
       }
       ctx.globalAlpha = 1;
       const tl = wrapCell(st.hover.a, st.hover.b);
       if (tl && doc.mode === 'rect') {
         const g = cellGeom(st.hover.a, st.hover.b);
         ctx.strokeStyle = '#c2410c'; ctx.lineWidth = 1.5 * lw; ctx.setLineDash([4 * lw, 3 * lw]);
-        ctx.strokeRect(g.cx - CELL / 2, g.cy - CELL / 2 - (st.clip.h - 1) * CELL, st.clip.w * CELL, st.clip.h * CELL);
+        ctx.strokeRect(g.cx - CELL / 2, g.cy - g.h / 2 - (st.clip.h - 1) * g.h, st.clip.w * CELL, st.clip.h * g.h);
         ctx.setLineDash([]);
       }
     }
@@ -439,9 +512,8 @@
       ctx.fillStyle = 'rgba(194,65,12,.10)'; ctx.fill();
       ctx.strokeStyle = 'rgba(194,65,12,.85)'; ctx.lineWidth = 1.5 * lw; ctx.stroke();
       if (st.tool === 'brush' && !st.pasting && !doc.cells[key(st.hover.a, st.hover.b)]) {
-        const g = cellGeom(st.hover.a, st.hover.b);
-        ctx.globalAlpha = 0.35;
-        canvasBackend(ctx, view.s).symbol(S.byId[st.sym], st.color, g.cx, g.cy, g.size, g.rot + (st.rot * Math.PI) / 180, st.mod);
+        ctx.globalAlpha = st.preview ? 0.6 : 0.35;
+        drawStitch(canvasBackend(ctx, view.s), curVal(), cellGeom(st.hover.a, st.hover.b), st.preview);
         ctx.globalAlpha = 1;
       }
     }
@@ -498,6 +570,7 @@
   }
 
   function floodFill(c) {
+    if (S.byId[st.sym].span > 1) { toast(t('toast.noFillSpan')); return; }
     const startK = key(c.a, c.b), target = doc.cells[startK] || null, repl = curVal();
     if (sameVal(target, repl)) return;
     const seen = new Set([startK]), queue = [[c.a, c.b]];
@@ -518,8 +591,8 @@
   }
 
   function pick(c) {
-    const v = c && doc.cells[key(c.a, c.b)];
-    if (!v) { toast('That cell is empty.'); return; }
+    const v = c && (doc.cells[key(c.a, c.b)] || doc.cells[coverOf(key(c.a, c.b))]);
+    if (!v) { toast(t('toast.emptyCell')); return; }
     if (st.pickReplace) {
       st.pickReplace = false; hideHint();
       replaceColor(v[1], st.color);
@@ -530,18 +603,19 @@
   }
 
   function replaceColor(from, to) {
-    if (from.toLowerCase() === to.toLowerCase()) { toast('Choose a different current color first.'); return; }
+    if (from.toLowerCase() === to.toLowerCase()) { toast(t('toast.sameColor')); return; }
     begin();
     for (const k in doc.cells) { const v = doc.cells[k]; if (v[1].toLowerCase() === from.toLowerCase()) setCell(k, [v[0], to, v[2], v[3]]); }
     const n = pending.size; commit();
-    toast(`Recolored ${n} stitch${n === 1 ? '' : 'es'}.`);
+    toast(t('toast.recolored', { n }));
   }
 
   // selection (rect mode)
   function normSel(s) { return { a0: Math.min(s.a0, s.a1), a1: Math.max(s.a0, s.a1), b0: Math.min(s.b0, s.b1), b1: Math.max(s.b0, s.b1) }; }
   function selWorldRect() {
     const s = normSel(st.sel);
-    return { x: s.a0 * CELL, y: (doc.rows - 1 - s.b1) * CELL, w: (s.a1 - s.a0 + 1) * CELL, h: (s.b1 - s.b0 + 1) * CELL };
+    const RH = rowH();
+    return { x: s.a0 * CELL, y: (doc.rows - 1 - s.b1) * RH, w: (s.a1 - s.a0 + 1) * CELL, h: (s.b1 - s.b0 + 1) * RH };
   }
   function selCells(fn) {
     const s = normSel(st.sel);
@@ -558,20 +632,24 @@
     selCells((a, b, s) => { const v = doc.cells[key(a, b)]; if (v) cells.push([a - s.a0, b - s.b0, v.slice()]); });
     const s = normSel(st.sel);
     st.clip = { w: s.a1 - s.a0 + 1, h: s.b1 - s.b0 + 1, cells };
-    toast(`Copied ${cells.length} stitch${cells.length === 1 ? '' : 'es'}.`);
+    toast(t('toast.copied', { n: cells.length }));
     return true;
   }
   function deleteSel() { if (!st.sel) return; begin(); selCells((a, b) => setCell(key(a, b), null)); commit(); }
   function flipSel(horizontal) {
     if (!st.sel) return;
-    const snap = {};
-    selCells((a, b) => { snap[key(a, b)] = doc.cells[key(a, b)]; });
+    const snap = [];
+    selCells((a, b) => { const v = doc.cells[key(a, b)]; if (v) snap.push([a, b, v]); });
     begin();
-    selCells((a, b, s) => {
-      const src = horizontal ? key(s.a1 - (a - s.a0), b) : key(a, s.b1 - (b - s.b0));
-      const v = snap[src];
-      setCell(key(a, b), v ? [v[0], v[1], horizontal ? mod(360 - v[2], 360) : mod(180 - v[2], 360), v[3]] : null);
-    });
+    selCells((a, b) => setCell(key(a, b), null));
+    for (const [a, b, v] of snap) {
+      const s = normSel(st.sel), sym = S.byId[v[0]];
+      // a cable's anchor is its left cell, so after a mirror it starts where its right end was
+      const na = horizontal ? s.a1 - (a - s.a0) - (sym.span - 1) : a, nb = horizontal ? b : s.b1 - (b - s.b0);
+      const id = horizontal && sym.mirror ? sym.mirror : v[0];
+      const rot = sym.mirror ? v[2] : horizontal ? mod(360 - v[2], 360) : mod(180 - v[2], 360);
+      setCell(key(na, nb), [id, v[1], rot, v[3]]);
+    }
     commit();
   }
   function recolorSel() {
@@ -579,9 +657,9 @@
     begin(); selCells((a, b) => { const v = doc.cells[key(a, b)]; if (v) setCell(key(a, b), [v[0], st.color, v[2], v[3]]); }); commit();
   }
   function startPaste() {
-    if (!st.clip || !st.clip.cells.length) { toast('Copy something first: select an area and press Ctrl C.'); return; }
+    if (!st.clip || !st.clip.cells.length) { toast(t('toast.copyFirst')); return; }
     st.pasting = true;
-    showHint('Click to stamp the copied stitches · Esc to stop');
+    showHint(t('hint.paste'));
     redraw();
   }
   function doPaste(c) {
@@ -624,8 +702,8 @@
       case 'fill': if (c) floodFill(c); break;
       case 'picker': pick(c); break;
       case 'select': {
-        if (doc.mode !== 'rect') { toast('Select & copy works on row charts. In rounds, use Fill or "Repeat around".'); break; }
-        const a = clamp(Math.floor(w.x / CELL), 0, doc.cols - 1), b = clamp(doc.rows - 1 - Math.floor(w.y / CELL), 0, doc.rows - 1);
+        if (doc.mode !== 'rect') { toast(t('toast.selectRows')); break; }
+        const a = clamp(Math.floor(w.x / CELL), 0, doc.cols - 1), b = clamp(doc.rows - 1 - Math.floor(w.y / rowH()), 0, doc.rows - 1);
         gesture = { type: 'select' }; setSelection({ a0: a, b0: b, a1: a, b1: b }); break;
       }
       case 'zoom': gesture = { type: 'zoombox', sx: p.x, sy: p.y, ex: p.x, ey: p.y, out: e.shiftKey || e.altKey }; break;
@@ -654,7 +732,7 @@
       case 'pan': view.x = gesture.vx + p.x - gesture.sx; view.y = gesture.vy + p.y - gesture.sy; view.auto = false; redraw(); break;
       case 'draw': paintLine(gesture.last, w, gesture.erase); gesture.last = w; redraw(); break;
       case 'select': {
-        const a = clamp(Math.floor(w.x / CELL), 0, doc.cols - 1), b = clamp(doc.rows - 1 - Math.floor(w.y / CELL), 0, doc.rows - 1);
+        const a = clamp(Math.floor(w.x / CELL), 0, doc.cols - 1), b = clamp(doc.rows - 1 - Math.floor(w.y / rowH()), 0, doc.rows - 1);
         st.sel.a1 = a; st.sel.b1 = b; redraw(); break;
       }
       case 'zoombox': gesture.ex = p.x; gesture.ey = p.y; redraw(); break;
@@ -693,7 +771,7 @@
 
   // while pasting on a row chart the anchor may sit outside the grid so a motif can overhang the edge
   const hoverFor = (w, c) => (st.pasting && doc.mode === 'rect'
-    ? { a: Math.floor(w.x / CELL), b: doc.rows - 1 - Math.floor(w.y / CELL) } : c);
+    ? { a: Math.floor(w.x / CELL), b: doc.rows - 1 - Math.floor(w.y / rowH()) } : c);
   const sameHover = (x, y) => (x && y ? x.a === y.a && x.b === y.b : x === y);
 
   // ---------------------------------------------------------------- keyboard
@@ -719,6 +797,7 @@
     if (TOOL_KEYS[k]) { setTool(TOOL_KEYS[k]); return; }
     if (k === 'r') { rotate(e.shiftKey ? -45 : 45); return; }
     if (k === '0') { fit(); return; }
+    if (k === 'p') { togglePreview(); return; }
     if (k === '+' || k === '=') { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.25); return; }
     if (k === '-' || k === '_') { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 0.8); return; }
   });
@@ -726,33 +805,35 @@
   window.addEventListener('blur', () => { st.space = false; });
 
   // ---------------------------------------------------------------- UI: tools, style, library
-  const TOOL_HINTS = {
-    brush: 'Click or drag to place stitches', eraser: 'Click or drag to erase',
-    fill: 'Fill a connected area (rows) or a run of stitches around a round', picker: 'Click a stitch to copy its symbol, color and rotation',
-    select: 'Drag to select. Then copy, cut, flip or recolor', zoom: 'Drag a box to zoom into it. Click to zoom in, Shift-click to zoom out', pan: 'Drag to move the view',
-  };
   function setTool(t) {
     st.tool = t;
     $$('#tools button').forEach((b) => b.classList.toggle('active', b.dataset.tool === t));
-    $('#toolHint').textContent = TOOL_HINTS[t] || '';
+    $('#toolHint').textContent = window.I18N.t('hint.' + t);
     applyCursor();
     redraw();
   }
   function applyCursor() { canvas.style.cursor = st.space ? 'grab' : { pan: 'grab', zoom: 'zoom-in', picker: 'copy' }[st.tool] || 'crosshair'; }
+  function togglePreview() {
+    st.preview = !st.preview;
+    $('#btnPreview').setAttribute('aria-pressed', String(st.preview));
+    redraw();
+  }
   function rotate(d) { st.rot = mod(st.rot + d, 360); syncStyleUI(); redraw(); }
 
-  function symSvg(sym, color = 'currentColor') { return `<svg viewBox="-6 -6 112 112" aria-hidden="true">${S.svgInner(sym, color, 6)}</svg>`; }
+  function symSvg(sym, color = 'currentColor') { return `<svg viewBox="${S.viewBox(sym)}" aria-hidden="true">${S.svgInner(sym, color, 6)}</svg>`; }
+  const forCraft = (s) => s.craft === 'any' || s.craft === doc.craft;
 
   function buildLibrary() {
     const q = $('#symSearch').value.trim().toLowerCase(), terms = doc.settings.terms;
     let html = '';
-    for (const cat of S.cats) {
-      const items = S.list.filter((s) => s.cat === cat && (!q || [s.us[0], s.us[1], s.uk[0], s.uk[1], cat].join(' ').toLowerCase().includes(q)));
+    for (const cat of [...S.cats.filter((c) => c !== 'mark'), 'mark']) {   // markers last, after the stitches
+      const catName = t('cat.' + cat);
+      const items = S.list.filter((s) => s.cat === cat && forCraft(s) && (!q || [...s.us, ...s.uk, ...s.lv, catName].join(' ').toLowerCase().includes(q)));
       if (!items.length) continue;
-      html += `<h3>${cat}</h3><div class="sym-grid">` + items.map((s) =>
+      html += `<h3>${catName}</h3><div class="sym-grid">` + items.map((s) =>
         `<button class="sym${s.id === st.sym ? ' active' : ''}" data-sym="${s.id}" title="${S.abbr(s, terms)} · ${S.name(s, terms)}">${symSvg(s)}<small>${S.abbr(s, terms)}</small></button>`).join('') + '</div>';
     }
-    $('#library').innerHTML = html || '<p class="muted small">No stitches match.</p>';
+    $('#library').innerHTML = html || `<p class="muted small">${t('lib.none')}</p>`;
   }
   $('#library').addEventListener('click', (e) => {
     const b = e.target.closest('[data-sym]'); if (!b) return;
@@ -765,8 +846,9 @@
   function syncStyleUI() {
     const s = S.byId[st.sym], terms = doc.settings.terms;
     $('#curSym').innerHTML = S.svgInner(s, st.color, 6);
+    $('#curSym').setAttribute('viewBox', S.viewBox(s));
     $('#curSym').style.transform = `rotate(${st.rot}deg)`;
-    $('#curAbbr').textContent = S.abbr(s, terms) + (st.mod ? ' ' + st.mod.toUpperCase() : '');
+    $('#curAbbr').textContent = S.abbr(s, terms) + (st.mod ? ' ' + S.modAbbr(st.mod, terms) : '');
     $('#curName').textContent = S.name(s, terms);
     $('#color').value = st.color;
     $('#rotLabel').textContent = st.rot + '°';
@@ -793,9 +875,11 @@
     $('#repeatBox').hidden = doc.mode !== 'round';
     $('#rectSettings').style.display = doc.mode === 'rect' ? '' : 'none';
     $('#roundSettings').style.display = doc.mode === 'round' ? '' : 'none';
-    $('#modeInfo').textContent = doc.mode === 'rect'
-      ? 'Row chart. Read from the bottom up. Odd rows run right to left, even rows left to right.'
-      : 'Round chart. Starts at the center and runs counterclockwise from the orange seam.';
+    $('#modeInfo').textContent = t(doc.craft === 'knit' ? (doc.knitRound ? 'mode.knitRound' : 'mode.knit') : doc.mode === 'rect' ? 'mode.rect' : 'mode.round');
+    $('#knitOpts').hidden = doc.craft !== 'knit';
+    $('#knitRound').checked = doc.knitRound;
+    $('#gaugeSts').value = doc.gauge ? doc.gauge.sts : ''; $('#gaugeRows').value = doc.gauge ? doc.gauge.rows : '';
+    if (!forCraft(S.byId[st.sym])) { st.sym = doc.craft === 'knit' ? 'k' : 'dc'; st.mod = ''; }
     $('#cols').value = doc.cols; $('#rows').value = doc.rows;
     $('#rings').value = doc.rings; $('#start').value = doc.start; $('#inc').value = doc.inc;
     $('#counts').value = doc.counts ? doc.counts.join(', ') : '';
@@ -813,7 +897,16 @@
     if ($('#writtenBox').open) renderWritten();
   }
 
-  $('#docName').addEventListener('change', (e) => { const v = e.target.value.trim() || 'Untitled chart'; docChange(() => { doc.name = v; }); });
+  $('#docName').addEventListener('change', (e) => { const v = e.target.value.trim() || t('doc.untitled'); docChange(() => { doc.name = v; }); });
+
+  $('#knitRound').addEventListener('change', (e) => docChange(() => { doc.knitRound = e.target.checked; }));
+  function applyGauge() {
+    const sts = Math.round(+$('#gaugeSts').value), rows = Math.round(+$('#gaugeRows').value);
+    docChange(() => { doc.gauge = sts > 0 && rows > 0 ? { sts: clamp(sts, 1, 200), rows: clamp(rows, 1, 200) } : null; });
+    fit();
+  }
+  $('#gaugeSts').addEventListener('change', applyGauge);
+  $('#gaugeRows').addEventListener('change', applyGauge);
 
   function pruneCells() { for (const k in doc.cells) { const [a, b] = unkey(k); if (!inBounds(a, b)) delete doc.cells[k]; } }
 
@@ -830,7 +923,7 @@
       const N = Math.max(1, (trial.counts && trial.counts[a]) || Math.round(trial.start + trial.inc * a));
       return a >= trial.rings || b >= N;
     }).length;
-    if (lost && !confirm(`${lost} stitch${lost === 1 ? '' : 'es'} fall outside the new size and will be removed. Continue? (You can undo this.)`)) return;
+    if (lost && !confirm(t('confirm.lost', { n: lost }))) return;
     docChange(() => { Object.assign(doc, next); pruneCells(); });
     fit();
   }
@@ -838,11 +931,11 @@
   function repeatRound() {
     const R = clamp(Math.round(+$('#repRound').value || 1), 1, doc.rings) - 1;
     const L = Math.max(1, Math.round(+$('#repLen').value || 1)), N = ringN(R);
-    if (L >= N) { toast(`Round ${R + 1} has ${N} stitches. Use a shorter motif.`); return; }
+    if (L >= N) { toast(t('toast.motifTooLong', { r: R + 1, n: N })); return; }
     begin();
     for (let i = L; i < N; i++) { const v = doc.cells[key(R, i % L)]; setCell(key(R, i), v ? v.slice() : null); }
     commit();
-    toast(`Repeated a ${L}-stitch motif around round ${R + 1}${N % L ? ' (the last repeat is partial)' : ''}.`);
+    toast(t('toast.repeated', { len: L, r: R + 1, partial: N % L ? t('toast.partial') : '' }));
   }
 
   const settingInputs = {
@@ -872,7 +965,7 @@
         doc.image = { src: c.toDataURL('image/jpeg', 0.85), visible: true, opacity: 0.45, scale: 1, dx: 0, dy: 0 };
         syncUI(); changed();
         $('#imgControls').closest('details').open = true;
-        toast('Reference image added. Change its opacity, size and position under "Reference image".');
+        toast(t('toast.imageAdded'));
       };
       im.src = fr.result;
     };
@@ -896,15 +989,15 @@
     return { syms: S.list.filter((s) => ids.has(s.id)), mods: [...mods], colors };
   }
   function renderLegend() {
-    const { syms, mods } = usedSymbols(), t = doc.settings.terms;
-    if (!syms.length) { $('#legend').innerHTML = '<div class="empty">Stitches you place will be listed here.</div>'; return; }
-    $('#legend').innerHTML = syms.map((s) => `<div class="item">${symSvg(s)}<div><b>${S.abbr(s, t)}</b> <span>${S.name(s, t)}</span></div></div>`).join('') +
-      mods.map((m) => `<div class="item"><svg viewBox="-6 -6 112 112"><path d="${S.MODIFIERS[m].d}" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg><div><b>${S.MODIFIERS[m].abbr}</b> <span>${S.MODIFIERS[m].name}</span></div></div>`).join('');
+    const { syms, mods } = usedSymbols(), terms = doc.settings.terms;
+    if (!syms.length) { $('#legend').innerHTML = `<div class="empty">${t('legend.empty')}</div>`; return; }
+    $('#legend').innerHTML = syms.map((s) => `<div class="item">${symSvg(s)}<div><b>${S.abbr(s, terms)}</b> <span>${S.name(s, terms)}</span></div></div>`).join('') +
+      mods.map((m) => `<div class="item"><svg viewBox="-6 -6 112 112"><path d="${S.MODIFIERS[m].d}" fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"/></svg><div><b>${S.modAbbr(m, terms)}</b> <span>${S.modName(m, terms)}</span></div></div>`).join('');
   }
 
   function stitchToken(v, colorLetters, multiColor) {
     const s = S.byId[v[0]]; if (!s || s.marker) return null;
-    let a = S.abbr(s, doc.settings.terms); if (v[3]) a += ' ' + v[3].toUpperCase();
+    let a = S.abbr(s, doc.settings.terms); if (v[3]) a += ' ' + S.modAbbr(v[3], doc.settings.terms);
     return { a, c: multiColor ? colorLetters[v[1].toLowerCase()] : '' };
   }
   function describe(tokens) {
@@ -914,7 +1007,7 @@
     for (let p = 2; p <= n / 2; p++) {
       if (n % p) continue;
       let ok = true; for (let i = p; i < n && ok; i++) ok = eq(tokens[i], tokens[i - p]);
-      if (ok) return `*${runs(tokens.slice(0, p))}*, repeat ${n / p} times`;
+      if (ok) return t('written.repeat', { motif: runs(tokens.slice(0, p)), n: n / p });
     }
     return runs(tokens);
   }
@@ -924,12 +1017,13 @@
       if (!cur) return;
       const pre = cur.c && cur.c !== lastColor ? `[${cur.c}] ` : '';
       if (cur.c) lastColor = cur.c;
-      // chains are written "ch 3", other stitches "3 dc"
-      out.push(pre + (cur.a === 'ch' || cur.a.startsWith('ch ') ? `ch ${cnt}${cur.a.slice(2)}` : cnt > 1 ? `${cnt} ${cur.a}` : cur.a));
+      // knitting: "k4", "[k2tog] 3 times"; crochet chains are written "ch 3", other stitches "3 dc"
+      if (cur.knit) out.push(pre + (cur.count ? t('knit.count', { a: cur.a, n: cnt }) : cnt > 1 ? t('knit.times', { a: cur.a, n: cnt }) : cur.a));
+      else out.push(pre + (cur.a === 'ch' || cur.a.startsWith('ch ') ? `ch ${cnt}${cur.a.slice(2)}` : cnt > 1 ? `${cnt} ${cur.a}` : cur.a));
     };
-    for (const t of tokens) {
-      if (cur && cur.a === t.a && cur.c === t.c) cnt++;
-      else { flush(); cur = t; cnt = 1; }
+    for (const tok of tokens) {
+      if (cur && cur.a === tok.a && cur.c === tok.c) cnt++;
+      else { flush(); cur = tok; cnt = 1; }
     }
     flush();
     return out.join(', ');
@@ -937,64 +1031,81 @@
   function renderWritten() {
     const { colors } = usedSymbols(), multi = colors.length > 1;
     const letters = {}; colors.forEach((c, i) => { letters[c] = String.fromCharCode(65 + (i % 26)); });
-    const t = doc.settings.terms.toUpperCase(), lines = [`${doc.name}`, `${t} crochet terms. This is a draft. Check it against your chart.`];
-    if (multi) lines.push('Colors: ' + colors.map((c) => `${letters[c]} = ${c}`).join(', '));
+    const terms = doc.settings.terms, knit = doc.craft === 'knit';
+    const lines = [`${doc.name}`, t(knit ? 'written.kterms' : 'written.terms', { terms: t('written.termsName')[terms] })];
+    if (multi) lines.push(t('written.colors') + colors.map((c) => `${letters[c]} = ${c}`).join(', '));
     lines.push('');
-    if (doc.mode === 'rect') {
-      lines.push('Row 1 is a right-side row worked right to left. Turn at the end of every row.', '');
+    if (knit) {
+      // RS rows read right to left; flat WS rows read left to right and are written as worked from the WS
+      lines.push(t(doc.knitRound ? 'written.kRoundIntro' : 'written.kFlatIntro'), '');
+      for (let b = 0; b < doc.rows; b++) {
+        const rs = doc.knitRound || b % 2 === 0, tokens = [];
+        let count = 0;
+        for (let i = 0; i < doc.cols; i++) {
+          const v = doc.cells[key(rs ? doc.cols - 1 - i : i, b)], s = v && S.byId[v[0]];
+          if (!s || s.marker || !s.knit) continue;
+          count += s.knit.make;
+          tokens.push({ a: rs ? S.abbr(s, terms) : S.wsAbbr(s, terms), c: multi ? letters[v[1].toLowerCase()] : '', knit: true, count: s.knit.count });
+        }
+        if (tokens.length) lines.push(t(doc.knitRound ? 'written.rnd' : 'written.row', { n: b + 1, side: t(rs ? 'written.rs' : 'written.ws'), text: describe(tokens).replace(/\.$/, ''), count }));
+      }
+    } else if (doc.mode === 'rect') {
+      lines.push(t('written.rowIntro'), '');
       for (let b = 0; b < doc.rows; b++) {
         const tokens = [], rtl = b % 2 === 0;
         for (let i = 0; i < doc.cols; i++) {
           const a = rtl ? doc.cols - 1 - i : i, v = doc.cells[key(a, b)];
           const tk = v && stitchToken(v, letters, multi); if (tk) tokens.push(tk);
         }
-        if (tokens.length) lines.push(`Row ${b + 1} (${rtl ? 'RS' : 'WS'}): ${describe(tokens)}. (${tokens.length} sts)`);
+        if (tokens.length) lines.push(t('written.row', { n: b + 1, side: t(rtl ? 'written.rs' : 'written.ws'), text: describe(tokens).replace(/\.$/, ''), count: tokens.length }));
       }
     } else {
-      const c = doc.center === 'ring' ? 'Make a magic ring.' : doc.center === 'chain' ? `Ch ${Math.max(4, Math.min(12, ringN(0)))}, join with sl st to form a ring.` : '';
-      lines.push(`${c} Work in rounds counterclockwise with the right side facing.`.trim(), '');
+      const c = doc.center === 'ring' ? t('written.ring')
+        : doc.center === 'chain' ? t('written.chainRing', { n: Math.max(4, Math.min(12, ringN(0))), slst: S.abbr(S.byId.slst, terms) }) : '';
+      lines.push(`${c} ${t('written.roundsIntro')}`.trim(), '');
       for (let a = 0; a < doc.rings; a++) {
         const tokens = [];
         for (let b = 0; b < ringN(a); b++) { const v = doc.cells[key(a, b)]; const tk = v && stitchToken(v, letters, multi); if (tk) tokens.push(tk); }
-        if (tokens.length) lines.push(`Rnd ${a + 1}: ${describe(tokens)}. (${tokens.length} sts)`);
+        if (tokens.length) lines.push(t('written.rnd', { n: a + 1, text: describe(tokens).replace(/\.$/, ''), count: tokens.length }));
       }
     }
-    if (lines.length <= 5) lines.push('(Place some stitches on the chart to build instructions.)');
+    if (lines.length <= 5) lines.push(t('written.empty'));
     $('#written').textContent = lines.join('\n');
   }
   $('#writtenBox').addEventListener('toggle', () => { if ($('#writtenBox').open) renderWritten(); });
 
   // ---------------------------------------------------------------- export
-  function exportLayout() {
+  function exportLayout(preview) {
     const B = paddedBounds(), M = 24, titleH = 46;
     const { syms, mods } = usedSymbols();
-    const entries = doc.settings.exportLegend ? [...syms.map((s) => ({ s })), ...mods.map((m) => ({ m }))] : [];
+    const entries = doc.settings.exportLegend && !preview ? [...syms.map((s) => ({ s })), ...mods.map((m) => ({ m }))] : [];
     const W = Math.max(B.w + 2 * M, 520);
     const colW = 250, cols = Math.max(1, Math.floor((W - 2 * M) / colW)), rowH = 34;
     const legendH = entries.length ? 34 + Math.ceil(entries.length / cols) * rowH + 10 : 0;
     const H = titleH + B.h + legendH + 2 * M;
     return { B, M, titleH, W, H, entries, cols, colW, rowH, chartX: (W - B.w) / 2 - B.x, chartY: M + titleH - B.y };
   }
-  function drawExport(be) {
-    const L = exportLayout(), t = doc.settings.terms, ink = '#2b2420', muted = '#7b6f66';
+  function drawExport(be, preview) {
+    const L = exportLayout(preview), terms = doc.settings.terms, ink = '#2b2420', muted = '#7b6f66';
     be.fillRect(0, 0, L.W, L.H, '#ffffff');
     be.text(doc.name, L.M, L.M + 16, 22, ink, 'left', 700);
-    be.text('Made with Microcheted', L.W - L.M, L.M + 16, 11, muted, 'right');
+    be.text(t('export.madeWith'), L.W - L.M, L.M + 16, 11, muted, 'right');
     be.push(L.chartX, L.chartY);
     const B = paddedBounds();
-    drawChart(be, { vr: { x0: B.x, y0: B.y, x1: B.x + B.w, y1: B.y + B.h }, zoom: 1, exporting: true });
+    drawChart(be, { vr: { x0: B.x, y0: B.y, x1: B.x + B.w, y1: B.y + B.h }, zoom: 1, exporting: true, preview });
     be.pop();
     if (L.entries.length) {
       const y0 = L.M + L.titleH + L.B.h + 16;
-      be.text('Stitch key', L.M, y0 + 8, 15, ink, 'left', 700);
+      be.text(t('export.key'), L.M, y0 + 8, 15, ink, 'left', 700);
       L.entries.forEach((e, i) => {
         const x = L.M + (i % L.cols) * L.colW, y = y0 + 34 + Math.floor(i / L.cols) * L.rowH;
         if (e.s) {
-          be.symbol(e.s, ink, x + 14, y, 30, 0, '');
-          be.text(`${S.abbr(e.s, t)}: ${S.name(e.s, t)}`, x + 36, y, 12.5, ink, 'left');
+          const sz = e.s.span > 1 ? 52 / (e.s.span * SYM_PAD) : 30, wide = e.s.span > 1 ? 26 : 0;
+          be.symbol(e.s, ink, x + 14 + wide / 2, y, sz, 0, '');
+          be.text(`${S.abbr(e.s, terms)}: ${S.name(e.s, terms)}`, x + 36 + wide, y, 12.5, ink, 'left');
         } else {
           be.symbol({ parts: [{ d: S.MODIFIERS[e.m].d }] }, ink, x + 14, y - 10, 30, 0, '');
-          be.text(`${S.MODIFIERS[e.m].abbr}: ${S.MODIFIERS[e.m].name}`, x + 36, y, 12.5, ink, 'left');
+          be.text(`${S.modAbbr(e.m, terms)}: ${S.modName(e.m, terms)}`, x + 36, y, 12.5, ink, 'left');
         }
       });
     }
@@ -1004,23 +1115,23 @@
     const be = svgBackend(); const L = drawExport(be);
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${Math.ceil(L.W)}" height="${Math.ceil(L.H)}" viewBox="0 0 ${Math.ceil(L.W)} ${Math.ceil(L.H)}">${be.out.join('')}</svg>`;
   }
-  const fileBase = () => (doc.name || 'chart').replace(/[^\w\- ]+/g, '').trim().replace(/\s+/g, '-').toLowerCase() || 'chart';
+  const fileBase = () => (doc.name || 'chart').replace(/[^\p{L}\p{N}_\- ]+/gu, '').trim().replace(/\s+/g, '-').toLowerCase() || 'chart';
   function download(blob, name) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }
-  function exportPng() {
-    const L = exportLayout();
+  function exportPng(preview) {
+    const L = exportLayout(preview);
     const scale = clamp(Math.min(3, 12000 / L.W, 12000 / L.H), 0.5, 3);
     const c = document.createElement('canvas'); c.width = Math.ceil(L.W * scale); c.height = Math.ceil(L.H * scale);
     const cx = c.getContext('2d'); cx.scale(scale, scale);
-    drawExport(canvasBackend(cx, 1));
-    c.toBlob((b) => { if (b) download(b, fileBase() + '.png'); else toast('This chart is too big to export as PNG. Try SVG.'); }, 'image/png');
+    drawExport(canvasBackend(cx, 1), preview);
+    c.toBlob((b) => { if (b) download(b, fileBase() + (preview ? '-yarn' : '') + '.png'); else toast(t('toast.pngTooBig')); }, 'image/png');
   }
   function exportSvg() { download(new Blob([buildSvg()], { type: 'image/svg+xml' }), fileBase() + '.svg'); }
   function printChart() {
     const w = window.open('', '_blank');
-    if (!w) { toast('Allow pop-ups for this site to print.'); return; }
+    if (!w) { toast(t('toast.popups')); return; }
     w.document.write(`<!doctype html><title>${doc.name.replace(/</g, '&lt;')}</title><style>@page{margin:12mm}body{margin:0}svg{width:100%;height:auto}</style>${buildSvg()}`);
     w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   }
@@ -1028,7 +1139,7 @@
   // ---------------------------------------------------------------- save / open
   function saveFile() {
     download(new Blob([JSON.stringify(doc)], { type: 'application/json' }), fileBase() + '.microcheted.json');
-    toast('Design saved. Open the .json file later with File → Open.');
+    toast(t('toast.saved'));
   }
   function openDoc(d, msg) {
     doc = d; resetHistory(); setSelection(null); stopPaste(); syncUI(); fit(); changed();
@@ -1039,8 +1150,8 @@
     if (file.type.startsWith('image/')) { loadImageFile(file); return; }
     const fr = new FileReader();
     fr.onload = () => {
-      try { openDoc(normalizeDoc(JSON.parse(fr.result)), `Opened "${file.name}".`); }
-      catch (err) { toast(err.message.startsWith('This file') ? err.message : 'Could not read that file. Is it a Microcheted .json design?'); }
+      try { openDoc(normalizeDoc(JSON.parse(fr.result)), t('toast.opened', { name: file.name })); }
+      catch (err) { toast(err.known ? err.message : t('err.read')); }
     };
     fr.readAsText(file);
   }
@@ -1056,15 +1167,21 @@
     const round = e.target.value === 'round';
     dlgNew.querySelector('[data-for=rect]').hidden = round;
     dlgNew.querySelector('[data-for=round]').hidden = !round;
+    dlgNew.querySelector('[data-for=knit]').hidden = e.target.value !== 'knit';
   });
   dlgNew.addEventListener('close', () => {
     if (dlgNew.returnValue !== 'ok') return;
     const f = new FormData(dlgNew.querySelector('form'));
     const mode = f.get('mode'), int = (n, lo, hi) => clamp(Math.round(+f.get(n) || lo), lo, hi);
-    const d = newDoc({ name: String(f.get('name') || 'Untitled chart').trim() || 'Untitled chart' });
+    const d = newDoc({ name: String(f.get('name') || '').trim() || t('doc.untitled') });
     if (mode === 'round') Object.assign(d, { mode: 'round', rings: int('rings', 1, 80), start: int('start', 1, 200), inc: clamp(Math.round(+f.get('inc') || 0), 0, 200) });
     else Object.assign(d, { cols: int('cols', 1, 400), rows: int('rows', 1, 400) });
-    if (mode === 'filet') { d.settings.numbers = true; st.sym = 'filetblock'; }
+    if (mode === 'knit') {
+      // knitting charts start as plain stockinette in the background color; gauge 20 × 28 gives knit-shaped cells
+      Object.assign(d, { craft: 'knit', knitRound: f.get('knitRound') === 'on', gauge: { sts: 20, rows: 28 } });
+      for (let b = 0; b < d.rows; b++) for (let a = 0; a < d.cols; a++) d.cells[key(a, b)] = ['k', d.settings.bg, 0, ''];
+      st.sym = 'p'; st.color = d.settings.bg;
+    } else if (mode === 'filet') { d.settings.numbers = true; st.sym = 'filetblock'; }
     else if (mode === 'round') st.sym = 'sc';
     st.rot = 0; st.mod = '';
     openDoc(d);
@@ -1073,7 +1190,7 @@
 
   // ---------------------------------------------------------------- samples
   function sampleRows() {
-    const d = newDoc({ name: 'Sample: textured stripes', cols: 24, rows: 12 });
+    const d = newDoc({ name: t('sample.rows'), cols: 24, rows: 12 });
     const set = (a, b, s, c = '#1f2937', r = 0, m = '') => { d.cells[key(a, b)] = [s, c, r, m]; };
     const row = (b, fn) => { for (let a = 0; a < d.cols; a++) { const v = fn(a); if (v) set(a, b, ...v); } };
     const A = '#1f2937', B = '#c2410c', C = '#0e7490', D = '#a16207';
@@ -1092,7 +1209,7 @@
     return d;
   }
   function sampleRounds() {
-    const d = newDoc({ name: 'Sample: round coaster', mode: 'round', rings: 6, start: 6, inc: 6, counts: [6, 12, 18, 24, 24, 12] });
+    const d = newDoc({ name: t('sample.rounds'), mode: 'round', rings: 6, start: 6, inc: 6, counts: [6, 12, 18, 24, 24, 12] });
     const fill = (a, fn) => { for (let b = 0; b < (d.counts[a]); b++) { const v = fn(b); if (v) d.cells[key(a, b)] = v; } };
     fill(0, () => ['sc', '#1f2937', 0, '']);
     fill(1, (b) => [b % 2 ? 'sc' : 'dc', '#c2410c', 0, '']);
@@ -1103,7 +1220,7 @@
     return d;
   }
   function sampleFilet() {
-    const d = newDoc({ name: 'Sample: filet heart', cols: 15, rows: 13 });
+    const d = newDoc({ name: t('sample.filet'), cols: 15, rows: 13 });
     const art = [
       '...............',
       '...............',
@@ -1128,11 +1245,11 @@
 
   // ---------------------------------------------------------------- actions & misc UI
   const actions = {
-    new: () => dlgNew.showModal(), open: () => $('#fileOpen').click(), save: saveFile,
-    png: exportPng, svg: exportSvg, print: printChart,
-    'sample-rows': () => openDoc(sampleRows(), 'Example loaded. Your previous chart was replaced.'),
-    'sample-rounds': () => { openDoc(sampleRounds(), 'Example loaded. Your previous chart was replaced.'); },
-    'sample-filet': () => { openDoc(sampleFilet(), 'Example loaded. Your previous chart was replaced.'); st.sym = 'filetblock'; syncStyleUI(); },
+    new: () => { dlgNew.querySelector('[name=name]').value = t('doc.untitled'); dlgNew.showModal(); }, open: () => $('#fileOpen').click(), save: saveFile,
+    png: () => exportPng(false), pngYarn: () => exportPng(true), svg: exportSvg, print: printChart, preview: togglePreview,
+    'sample-rows': () => openDoc(sampleRows(), t('toast.sampleLoaded')),
+    'sample-rounds': () => { openDoc(sampleRounds(), t('toast.sampleLoaded')); },
+    'sample-filet': () => { openDoc(sampleFilet(), t('toast.sampleLoaded')); st.sym = 'filetblock'; syncStyleUI(); },
     undo, redo, fit,
     zoomin: () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.25),
     zoomout: () => zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 0.8),
@@ -1143,14 +1260,14 @@
     zoomsel: () => { if (st.sel) { const r = selWorldRect(); zoomToRect(r.x, r.y, r.w, r.h); } },
     recolorType: () => {
       begin(); for (const k in doc.cells) { const v = doc.cells[k]; if (v[0] === st.sym) setCell(k, [v[0], st.color, v[2], v[3]]); }
-      const n = pending.size; commit(); toast(`Recolored ${n} stitch${n === 1 ? '' : 'es'}.`);
+      const n = pending.size; commit(); toast(t('toast.recolored', { n }));
     },
-    recolorFrom: () => { st.pickReplace = true; showHint('Click a stitch. Every stitch in its color changes to the current color · Esc to cancel'); closeDrawers(); },
+    recolorFrom: () => { st.pickReplace = true; showHint(t('hint.replaceColor')); closeDrawers(); },
     applySize, repeatRound,
     loadImage: () => $('#fileImage').click(),
     removeImage: () => { doc.image = null; syncUI(); changed(); },
     zoomImage: () => { const r = imageRect(); if (r) zoomToRect(r.x, r.y, r.w, r.h); },
-    copyWritten: () => { navigator.clipboard?.writeText($('#written').textContent).then(() => toast('Instructions copied.'), () => toast('Copy failed. Select the text and copy it yourself.')); },
+    copyWritten: () => { navigator.clipboard?.writeText($('#written').textContent).then(() => toast(t('toast.textCopied')), () => toast(t('toast.copyFailed'))); },
   };
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-act]');
@@ -1171,13 +1288,13 @@
 
   function updateStatus() {
     const h = st.hover;
-    let txt = doc.mode === 'rect' ? `${doc.cols} × ${doc.rows} stitches` : `${doc.rings} rounds`;
+    let txt = doc.mode === 'rect' ? t('status.size', { cols: doc.cols, rows: doc.rows }) : t('status.rounds', { n: doc.rings });
     if (h && inBounds(h.a, h.b)) {
       const v = doc.cells[key(h.a, h.b)], s = v && S.byId[v[0]];
-      const what = s ? ` · ${S.abbr(s, doc.settings.terms)}${v[3] ? ' ' + v[3].toUpperCase() : ''}` : '';
-      txt = doc.mode === 'rect'
-        ? `Row ${h.b + 1}, stitch ${h.b % 2 === 0 ? doc.cols - h.a : h.a + 1}${what}`
-        : `Round ${h.a + 1}, stitch ${h.b + 1} of ${ringN(h.a)}${what}`;
+      const what = s ? ` · ${S.abbr(s, doc.settings.terms)}${v[3] ? ' ' + S.modAbbr(v[3], doc.settings.terms) : ''}` : '';
+      txt = (doc.mode === 'rect'
+        ? t('status.rowCell', { row: h.b + 1, st: h.b % 2 === 0 || doc.knitRound ? doc.cols - h.a : h.a + 1 })
+        : t('status.roundCell', { r: h.a + 1, st: h.b + 1, n: ringN(h.a) })) + what;
     }
     $('#status').textContent = txt;
   }
@@ -1192,7 +1309,15 @@
 
   new ResizeObserver(() => { if (view.auto) fit(); else redraw(); }).observe(canvas);
 
+  // language
+  const langSel = $('#lang');
+  langSel.innerHTML = window.I18N.langs.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+  langSel.value = window.I18N.lang;
+  langSel.addEventListener('change', () => window.I18N.setLang(langSel.value));
+  window.addEventListener('microcheted:lang', () => { syncUI(); syncStyleUI(); setTool(st.tool); });
+
   // ---------------------------------------------------------------- init
+  window.I18N.apply();
   doc = loadAutosave() || sampleRows();
   setTool('brush');
   syncUI();
