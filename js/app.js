@@ -26,6 +26,7 @@
       app: 'Microcheted', version: 1, name: t('doc.untitled'), mode: 'rect', craft: 'crochet', knitRound: false, gauge: null,
       cols: 30, rows: 20, rings: 8, start: 6, inc: 6, counts: null, center: 'ring',
       cells: {}, image: null,
+      progress: { row: 1, done: [] },   // row counter and checked-off rows/rounds (0-based), kept outside undo history
       settings: { bg: '#ffffff', grid: '#d6d3d1', showGrid: true, numbers: true, terms: window.I18N.lang === 'lv' ? 'lv' : 'us', exportLegend: true },
     }, o);
   }
@@ -48,6 +49,10 @@
     for (const [k, v] of Object.entries(raw.cells)) {
       if (!/^\d+,\d+$/.test(k) || !Array.isArray(v) || !S.byId[v[0]]) continue;
       d.cells[k] = [v[0], /^#[0-9a-f]{6}$/i.test(v[1]) ? v[1] : '#1f2937', +v[2] || 0, v[3] === 'blo' || v[3] === 'flo' ? v[3] : ''];
+    }
+    if (raw.progress && typeof raw.progress === 'object') {
+      d.progress.row = int(raw.progress.row, 1, 9999, 1);
+      if (Array.isArray(raw.progress.done)) d.progress.done = [...new Set(raw.progress.done.filter((n) => Number.isInteger(n) && n >= 0 && n < 400))].sort((x, y) => x - y);
     }
     if (raw.image && typeof raw.image.src === 'string' && raw.image.src.startsWith('data:image/')) {
       d.image = Object.assign({ visible: true, opacity: 0.5, scale: 1, dx: 0, dy: 0 }, raw.image);
@@ -168,7 +173,7 @@
     changed();
   }
   function pushHist(e) { hist.undo.push(e); if (hist.undo.length > 300) hist.undo.shift(); hist.redo = []; updateUndoButtons(); }
-  const snapshot = () => JSON.stringify(Object.assign({}, doc, { image: null }));
+  const snapshot = () => JSON.stringify(Object.assign({}, doc, { image: null, progress: null }));
   function docChange(fn) {
     const before = snapshot();
     fn();
@@ -180,9 +185,9 @@
     if (e.cells) {
       for (const [k, b, a] of e.cells) { const v = dir < 0 ? b : a; if (v) doc.cells[k] = v; else delete doc.cells[k]; }
     } else {
-      const img = doc.image;
+      const img = doc.image, prog = doc.progress;
       doc = JSON.parse(dir < 0 ? e.doc[0] : e.doc[1]);
-      doc.image = img;
+      doc.image = img; doc.progress = prog;
       syncUI();
     }
     changed();
@@ -479,8 +484,36 @@
     drawOverlays();
   }
 
+  // one row (rect) or round as a closed path
+  function traceLine(c, n) {
+    if (doc.mode === 'rect') { const h = rowH(); c.rect(0, (doc.rows - 1 - n) * h, doc.cols * CELL, h); return; }
+    const r0 = INNER + n * CELL;
+    c.arc(0, 0, r0 + CELL, 0, TAU); c.moveTo(r0, 0); c.arc(0, 0, r0, 0, TAU, true);
+  }
+  const lineCount = () => (doc.mode === 'rect' ? doc.rows : doc.rings);
+  function drawProgress() {
+    const lw = 1 / view.s, P = doc.progress;
+    // checked rows: washed out and struck through, but the stitches stay readable
+    for (const n of P.done) {
+      if (n >= lineCount()) continue;
+      ctx.beginPath(); traceLine(ctx, n);
+      ctx.globalAlpha = 0.55; ctx.fillStyle = doc.settings.bg; ctx.fill('evenodd'); ctx.globalAlpha = 1;
+      ctx.beginPath();
+      if (doc.mode === 'rect') { const y = (doc.rows - 1 - n + 0.5) * rowH(); ctx.moveTo(-CELL * 0.2, y); ctx.lineTo(doc.cols * CELL + CELL * 0.2, y); }
+      else ctx.arc(0, 0, INNER + (n + 0.5) * CELL, 0, TAU);
+      ctx.strokeStyle = 'rgba(21,128,61,.85)'; ctx.lineWidth = Math.max(2.5 * lw, CELL * 0.07); ctx.stroke();
+    }
+    // the row the counter is on
+    const cur = P.row - 1;
+    if (cur < lineCount()) {
+      ctx.beginPath(); traceLine(ctx, cur);
+      ctx.strokeStyle = '#1d4ed8'; ctx.lineWidth = 2.5 * lw; ctx.stroke();
+    }
+  }
+
   function drawOverlays() {
     const lw = 1 / view.s;
+    drawProgress();
     // selection
     if (st.sel) {
       const r = selWorldRect();
@@ -669,6 +702,38 @@
   }
   function stopPaste() { st.pasting = false; hideHint(); redraw(); }
 
+  // ---------------------------------------------------------------- progress: row counter & checked rows
+  // the row (rect) or round under a world point; anywhere along the row counts, including its number
+  function lineAt(w) {
+    if (doc.mode === 'rect') {
+      const b = doc.rows - 1 - Math.floor(w.y / rowH());
+      return b >= 0 && b < doc.rows && w.x >= -CELL && w.x < (doc.cols + 1) * CELL ? b : null;
+    }
+    const c = cellAt(w.x, w.y);
+    return c ? c.a : null;
+  }
+  function setDone(n, on) {
+    const d = doc.progress.done, has = d.includes(n);
+    if (on === has) return;
+    doc.progress.done = on ? [...d, n].sort((x, y) => x - y) : d.filter((x) => x !== n);
+    progressChanged();
+  }
+  function stepRow(d) {
+    doc.progress.row = clamp(doc.progress.row + d, 1, 9999);
+    progressChanged();
+  }
+  function resetProgress() {
+    if (!confirm(t('confirm.resetProgress'))) return;
+    doc.progress = { row: 1, done: [] };
+    progressChanged();
+  }
+  function progressChanged() { syncProgressUI(); redraw(); clearTimeout(saveTimer); saveTimer = setTimeout(autosave, 500); }
+  function syncProgressUI() {
+    $('#counterLabel').textContent = t(doc.mode === 'round' || doc.knitRound ? 'progress.round' : 'progress.row');
+    $('#counterVal').textContent = doc.progress.row;
+    $('[data-act=rowDec]').disabled = doc.progress.row <= 1;
+  }
+
   // ---------------------------------------------------------------- pointer input
   const pointers = new Map();
   let gesture = null;
@@ -707,6 +772,11 @@
         gesture = { type: 'select' }; setSelection({ a0: a, b0: b, a1: a, b1: b }); break;
       }
       case 'zoom': gesture = { type: 'zoombox', sx: p.x, sy: p.y, ex: p.x, ey: p.y, out: e.shiftKey || e.altKey }; break;
+      case 'check': {
+        // dragging applies the first row's new state to every row passed over
+        const n = lineAt(w); if (n == null) break;
+        gesture = { type: 'check', on: !doc.progress.done.includes(n) }; setDone(n, gesture.on); break;
+      }
     }
   });
 
@@ -736,6 +806,7 @@
         st.sel.a1 = a; st.sel.b1 = b; redraw(); break;
       }
       case 'zoombox': gesture.ex = p.x; gesture.ey = p.y; redraw(); break;
+      case 'check': { const n = lineAt(w); if (n != null) setDone(n, gesture.on); break; }
     }
   });
 
@@ -775,7 +846,7 @@
   const sameHover = (x, y) => (x && y ? x.a === y.a && x.b === y.b : x === y);
 
   // ---------------------------------------------------------------- keyboard
-  const TOOL_KEYS = { b: 'brush', e: 'eraser', f: 'fill', i: 'picker', s: 'select', z: 'zoom', h: 'pan' };
+  const TOOL_KEYS = { b: 'brush', e: 'eraser', f: 'fill', i: 'picker', s: 'select', z: 'zoom', h: 'pan', c: 'check' };
   window.addEventListener('keydown', (e) => {
     const t = e.target;
     if (t.closest && t.closest('input, textarea, select, dialog')) return;
@@ -798,6 +869,7 @@
     if (k === 'r') { rotate(e.shiftKey ? -45 : 45); return; }
     if (k === '0') { fit(); return; }
     if (k === 'p') { togglePreview(); return; }
+    if (k === 'n') { stepRow(e.shiftKey ? -1 : 1); return; }
     if (k === '+' || k === '=') { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 1.25); return; }
     if (k === '-' || k === '_') { zoomAt(canvas.clientWidth / 2, canvas.clientHeight / 2, 0.8); return; }
   });
@@ -812,7 +884,7 @@
     applyCursor();
     redraw();
   }
-  function applyCursor() { canvas.style.cursor = st.space ? 'grab' : { pan: 'grab', zoom: 'zoom-in', picker: 'copy' }[st.tool] || 'crosshair'; }
+  function applyCursor() { canvas.style.cursor = st.space ? 'grab' : { pan: 'grab', zoom: 'zoom-in', picker: 'copy', check: 'pointer' }[st.tool] || 'crosshair'; }
   function togglePreview() {
     st.preview = !st.preview;
     $('#btnPreview').setAttribute('aria-pressed', String(st.preview));
@@ -893,7 +965,7 @@
       $('#imgScale').value = doc.image.scale; $('#imgX').value = doc.image.dx; $('#imgY').value = doc.image.dy;
     }
     if (doc.mode !== 'rect') setSelection(null);
-    buildLibrary(); buildSwatches(); renderLegend(); updateStatus();
+    buildLibrary(); buildSwatches(); renderLegend(); updateStatus(); syncProgressUI();
     if ($('#writtenBox').open) renderWritten();
   }
 
@@ -1264,6 +1336,7 @@
     },
     recolorFrom: () => { st.pickReplace = true; showHint(t('hint.replaceColor')); closeDrawers(); },
     applySize, repeatRound,
+    rowInc: () => stepRow(1), rowDec: () => stepRow(-1), rowReset: resetProgress,
     loadImage: () => $('#fileImage').click(),
     removeImage: () => { doc.image = null; syncUI(); changed(); },
     zoomImage: () => { const r = imageRect(); if (r) zoomToRect(r.x, r.y, r.w, r.h); },

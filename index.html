@@ -53,6 +53,7 @@
       <button data-tool="select" data-i18n-attr="title:tool.selectTip"><span>⬚</span><small data-i18n="tool.select">Select</small></button>
       <button data-tool="zoom" data-i18n-attr="title:tool.zoomTip"><span>⌕</span><small data-i18n="tool.zoom">Zoom</small></button>
       <button data-tool="pan" data-i18n-attr="title:tool.panTip"><span>✋</span><small data-i18n="tool.pan">Pan</small></button>
+      <button data-tool="check" data-i18n-attr="title:tool.checkTip"><span>✓</span><small data-i18n="tool.check">Check</small></button>
     </div>
     <div class="tool-group">
       <div class="current" data-i18n-attr="title:tool.current">
@@ -66,6 +67,12 @@
       <div class="seg" id="modSeg" data-i18n-attr="title:tool.loop">
         <button data-mod="" data-i18n="mod.both">Both</button><button data-mod="blo" data-i18n="mod.blo">BLO</button><button data-mod="flo" data-i18n="mod.flo">FLO</button>
       </div>
+    </div>
+    <div class="tool-group counter" data-i18n-attr="title:progress.tip">
+      <button class="icon-btn" data-act="rowDec" data-i18n-attr="title:progress.decTip,aria-label:progress.dec">−</button>
+      <div class="counter-val" aria-live="polite"><small id="counterLabel">Row</small><b id="counterVal">1</b></div>
+      <button class="btn primary" data-act="rowInc" data-i18n-attr="title:progress.incTip,aria-label:progress.inc">+1</button>
+      <button class="icon-btn" data-act="rowReset" data-i18n-attr="title:progress.resetTip,aria-label:progress.reset">↺</button>
     </div>
     <div class="tool-group">
       <button class="btn sm toggle" id="btnPreview" data-act="preview" aria-pressed="false" data-i18n="preview.label" data-i18n-attr="title:preview.tip">Yarn preview</button>
@@ -218,6 +225,7 @@
           <li data-i18n-html="help.k.draw"></li><li data-i18n-html="help.k.erase"></li><li data-i18n-html="help.k.fill"></li>
           <li data-i18n-html="help.k.pick"></li><li data-i18n-html="help.k.select"></li><li data-i18n-html="help.k.zoom"></li>
           <li data-i18n-html="help.k.pan"></li><li data-i18n-html="help.k.rotate"></li><li data-i18n-html="help.k.preview"></li>
+          <li data-i18n-html="help.k.check"></li><li data-i18n-html="help.k.counter"></li>
         </ul>
         <ul class="keys">
           <li data-i18n-html="help.k.undo"></li>
