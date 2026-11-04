@@ -1,261 +1,36 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Microcheted — crochet chart designer</title>
-  <meta name="description" content="Free online crochet chart designer: draw stitch diagrams with standard crochet symbols in rows, rounds or filet grids. Save, import, recolor, zoom and export.">
-  <meta property="og:title" content="Microcheted: crochet chart designer">
-  <meta property="og:description" content="Free online crochet and knitting chart designer: draw stitch diagrams in rows, rounds or filet grids.">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://teddybear1998.github.io/microcheted/">
-  <meta property="og:site_name" content="Microcheted">
-  <meta property="og:image" content="https://teddybear1998.github.io/microcheted/og-image.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="Microcheted: free crochet and knitting charts, with the pixel-art bear logo">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:image" content="https://teddybear1998.github.io/microcheted/og-image.png">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microcheted has moved</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://microcheted.impatientbeaststudios.com/">
+<script>
+  // Hand the autosaved chart and language to the new address (see js/move.js there),
+  // then go. Storage is per address, so without this the chart would seem lost.
+  (function () {
+    var target = 'https://microcheted.impatientbeaststudios.com/' + location.search + location.hash
+    try {
+      var doc = localStorage.getItem('microcheted.autosave.v1')
+      var lang = localStorage.getItem('microcheted.lang')
+      if (doc || lang) window.name = 'microcheted-move:' + JSON.stringify({ doc: doc, lang: lang })
+    } catch (e) {}
+    location.replace(target)
+  })()
+</script>
+<meta http-equiv="refresh" content="5; url=https://microcheted.impatientbeaststudios.com/">
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #faf7f2; color: #2b2420; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; text-align: center; padding: 16px; }
+  a { color: #b4532a; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { body { background: #1c1917; color: #e7e5e4; } a { color: #f0a27a; } }
+</style>
 </head>
 <body>
-  <header class="topbar">
-    <button class="icon-btn only-mobile" id="btnLeft" data-i18n-attr="title:top.library,aria-label:top.library">☰</button>
-    <div class="brand"><img src="favicon.svg" alt="" width="32" height="32"><span>Microcheted</span></div>
-    <input id="docName" class="doc-name" data-i18n-attr="aria-label:top.docName" spellcheck="false">
-    <nav class="menu">
-      <div class="dropdown">
-        <button class="btn" data-i18n="menu.file">File ▾</button>
-        <div class="dropdown-menu">
-          <button data-act="new"><span data-i18n="menu.new">New chart…</span></button>
-          <button data-act="open"><span data-i18n="menu.open">Open design…</span> <kbd>Ctrl O</kbd></button>
-          <button data-act="save"><span data-i18n="menu.save">Save design</span> <kbd>Ctrl S</kbd></button>
-          <hr>
-          <button data-act="png" data-i18n="menu.png">Export PNG image</button>
-          <button data-act="pngYarn" data-i18n="menu.pngYarn">Export yarn preview (PNG)</button>
-          <button data-act="svg" data-i18n="menu.svg">Export SVG (vector)</button>
-          <button data-act="print" data-i18n="menu.print">Print…</button>
-          <hr>
-          <button data-act="sample-rows" data-i18n="menu.sampleRows">Example: rows</button>
-          <button data-act="sample-rounds" data-i18n="menu.sampleRounds">Example: rounds</button>
-          <button data-act="sample-filet" data-i18n="menu.sampleFilet">Example: filet</button>
-        </div>
-      </div>
-      <button class="icon-btn" data-act="undo" data-i18n-attr="title:top.undoTip,aria-label:top.undo">↶</button>
-      <button class="icon-btn" data-act="redo" data-i18n-attr="title:top.redoTip,aria-label:top.redo">↷</button>
-      <span class="sep"></span>
-      <button class="icon-btn" data-act="zoomout" data-i18n-attr="title:top.zoomOutTip,aria-label:top.zoomOut">−</button>
-      <button class="zoom-label" id="zoomLabel" data-act="fit" data-i18n-attr="title:top.fitTip">100%</button>
-      <button class="icon-btn" data-act="zoomin" data-i18n-attr="title:top.zoomInTip,aria-label:top.zoomIn">+</button>
-      <button class="icon-btn" data-act="help" data-i18n-attr="title:top.helpTip,aria-label:top.help">?</button>
-      <select id="lang" class="lang-select" data-i18n-attr="title:lang.label,aria-label:lang.label"></select>
-      <a class="btn donate" href="https://ko-fi.com/teddybear1998" target="_blank" rel="noopener" data-i18n-attr="title:top.donateTip,aria-label:top.donateAria"><span aria-hidden="true">♥</span><span class="label"> <span data-i18n="top.donate">Donate</span></span></a>
-    </nav>
-    <button class="icon-btn only-mobile" id="btnRight" data-i18n-attr="title:top.settings,aria-label:top.settings">⚙</button>
-  </header>
-
-  <div class="toolbar" role="toolbar" data-i18n-attr="aria-label:toolbar.label">
-    <div class="tool-group" id="tools">
-      <button data-tool="brush" data-i18n-attr="title:tool.brushTip"><span>✎</span><small data-i18n="tool.brush">Draw</small></button>
-      <button data-tool="eraser" data-i18n-attr="title:tool.eraserTip"><span>⌫</span><small data-i18n="tool.eraser">Erase</small></button>
-      <button data-tool="fill" data-i18n-attr="title:tool.fillTip"><span>▧</span><small data-i18n="tool.fill">Fill</small></button>
-      <button data-tool="picker" data-i18n-attr="title:tool.pickerTip"><span>⊙</span><small data-i18n="tool.picker">Pick</small></button>
-      <button data-tool="select" data-i18n-attr="title:tool.selectTip"><span>⬚</span><small data-i18n="tool.select">Select</small></button>
-      <button data-tool="zoom" data-i18n-attr="title:tool.zoomTip"><span>⌕</span><small data-i18n="tool.zoom">Zoom</small></button>
-      <button data-tool="pan" data-i18n-attr="title:tool.panTip"><span>✋</span><small data-i18n="tool.pan">Pan</small></button>
-      <button data-tool="check" data-i18n-attr="title:tool.checkTip"><span>✓</span><small data-i18n="tool.check">Check</small></button>
-    </div>
-    <div class="tool-group">
-      <div class="current" data-i18n-attr="title:tool.current">
-        <svg id="curSym" viewBox="-6 -6 112 112" width="34" height="34"></svg>
-        <div><b id="curAbbr">sc</b><small id="curName">single crochet</small></div>
-      </div>
-      <label class="color-chip" data-i18n-attr="title:tool.color"><input type="color" id="color" value="#1f2937"></label>
-      <button class="icon-btn" data-act="rotl" data-i18n-attr="title:tool.rotlTip,aria-label:tool.rotl">⟲</button>
-      <span class="rot-label" id="rotLabel">0°</span>
-      <button class="icon-btn" data-act="rotr" data-i18n-attr="title:tool.rotrTip,aria-label:tool.rotr">⟳</button>
-      <div class="seg" id="modSeg" data-i18n-attr="title:tool.loop">
-        <button data-mod="" data-i18n="mod.both">Both</button><button data-mod="blo" data-i18n="mod.blo">BLO</button><button data-mod="flo" data-i18n="mod.flo">FLO</button>
-      </div>
-    </div>
-    <div class="tool-group counter" data-i18n-attr="title:progress.tip">
-      <button class="icon-btn" data-act="rowDec" data-i18n-attr="title:progress.decTip,aria-label:progress.dec">−</button>
-      <div class="counter-val" aria-live="polite"><small id="counterLabel">Row</small><b id="counterVal">1</b></div>
-      <button class="btn primary" data-act="rowInc" data-i18n-attr="title:progress.incTip,aria-label:progress.inc">+1</button>
-      <button class="icon-btn" data-act="rowReset" data-i18n-attr="title:progress.resetTip,aria-label:progress.reset">↺</button>
-    </div>
-    <div class="tool-group">
-      <button class="btn sm toggle" id="btnPreview" data-act="preview" aria-pressed="false" data-i18n="preview.label" data-i18n-attr="title:preview.tip">Yarn preview</button>
-    </div>
-    <div class="tool-group sel-actions" id="selActions" hidden>
-      <button class="btn sm" data-act="copy" data-i18n="sel.copy">Copy</button>
-      <button class="btn sm" data-act="cut" data-i18n="sel.cut">Cut</button>
-      <button class="btn sm" data-act="paste" data-i18n="sel.paste">Paste</button>
-      <button class="btn sm" data-act="del" data-i18n="sel.del">Delete</button>
-      <button class="btn sm" data-act="fliph" data-i18n="sel.fliph">Flip ↔</button>
-      <button class="btn sm" data-act="flipv" data-i18n="sel.flipv">Flip ↕</button>
-      <button class="btn sm" data-act="recolor" data-i18n="sel.recolor">Recolor</button>
-      <button class="btn sm" data-act="zoomsel" data-i18n="sel.zoom">Zoom to</button>
-    </div>
-  </div>
-
-  <main class="workspace">
-    <aside class="panel left" id="leftPanel">
-      <div class="panel-head">
-        <input type="search" id="symSearch" data-i18n-attr="placeholder:lib.search,aria-label:lib.searchAria">
-      </div>
-      <div id="library" class="library"></div>
-    </aside>
-
-    <section class="stage" id="stage">
-      <canvas id="chart" tabindex="0" data-i18n-attr="aria-label:canvas.label"></canvas>
-      <div class="hint" id="hint" hidden></div>
-      <div class="statusbar"><span id="status">—</span><span id="toolHint"></span></div>
-    </section>
-
-    <aside class="panel right" id="rightPanel">
-      <details open>
-        <summary data-i18n="panel.colors">Colors</summary>
-        <div class="swatches" id="swatches"></div>
-        <div class="row gap">
-          <button class="btn sm" data-act="recolorType" data-i18n="panel.recolorType">Recolor all of this stitch</button>
-          <button class="btn sm" data-act="recolorFrom" data-i18n="panel.recolorFrom" data-i18n-attr="title:panel.recolorFromTip">Replace a color…</button>
-        </div>
-      </details>
-
-      <details open>
-        <summary data-i18n="panel.chart">Chart</summary>
-        <div class="form">
-          <div class="info" id="modeInfo"></div>
-          <div id="rectSettings">
-            <label><span data-i18n="panel.cols">Stitches (columns)</span> <input type="number" id="cols" min="1" max="400"></label>
-            <label><span data-i18n="panel.rows">Rows</span> <input type="number" id="rows" min="1" max="400"></label>
-            <label class="check" id="knitOpts" hidden><input type="checkbox" id="knitRound"> <span data-i18n="panel.knitRound">Worked in the round</span></label>
-            <label><span data-i18n="panel.gaugeSts">Gauge: stitches / 10 cm</span> <input type="number" id="gaugeSts" min="1" max="200" data-i18n-attr="placeholder:panel.gaugePh"></label>
-            <label><span data-i18n="panel.gaugeRows">Gauge: rows / 10 cm</span> <input type="number" id="gaugeRows" min="1" max="200" data-i18n-attr="placeholder:panel.gaugePh"></label>
-          </div>
-          <div id="roundSettings">
-            <label><span data-i18n="panel.rings">Rounds</span> <input type="number" id="rings" min="1" max="80"></label>
-            <label><span data-i18n="panel.start">Stitches in round 1</span> <input type="number" id="start" min="1" max="200"></label>
-            <label><span data-i18n="panel.inc">Added per round</span> <input type="number" id="inc" min="0" max="200"></label>
-            <label class="wide"><span data-i18n="panel.counts">Custom counts per round</span> <input type="text" id="counts" data-i18n-attr="placeholder:panel.countsPh"></label>
-            <label><span data-i18n="panel.center">Center</span> <select id="center"><option value="ring" data-i18n="center.ring">Magic ring</option><option value="chain" data-i18n="center.chain">Chain ring</option><option value="none" data-i18n="center.none">None</option></select></label>
-          </div>
-          <button class="btn primary sm" data-act="applySize" data-i18n="panel.applySize">Apply size</button>
-        </div>
-        <div class="form" id="repeatBox">
-          <div class="info" data-i18n="panel.repeatInfo">Repeat the first stitches of a round all the way around it.</div>
-          <label><span data-i18n="panel.repRound">Round</span> <input type="number" id="repRound" min="1" value="2"></label>
-          <label><span data-i18n="panel.repLen">Motif length</span> <input type="number" id="repLen" min="1" value="2"></label>
-          <button class="btn sm" data-act="repeatRound" data-i18n="panel.repeat">Repeat around</button>
-        </div>
-      </details>
-
-      <details>
-        <summary data-i18n="panel.display">Display</summary>
-        <div class="form">
-          <label><span data-i18n="panel.bg">Background</span> <input type="color" id="bgColor"></label>
-          <label><span data-i18n="panel.grid">Grid lines</span> <input type="color" id="gridColor"></label>
-          <label class="check"><input type="checkbox" id="showGrid"> <span data-i18n="panel.showGrid">Show grid</span></label>
-          <label class="check"><input type="checkbox" id="showNumbers"> <span data-i18n="panel.numbers">Row / round numbers</span></label>
-          <label class="check"><input type="checkbox" id="exportLegend"> <span data-i18n="panel.exportLegend">Stitch key in exports</span></label>
-          <label><span data-i18n="panel.terms">Terminology</span> <select id="terms"><option value="us" data-i18n="terms.us">US (sc, dc…)</option><option value="uk" data-i18n="terms.uk">UK (dc, tr…)</option><option value="lv" data-i18n="terms.lv">Latvian (ī.st., st.1a.…)</option></select></label>
-        </div>
-      </details>
-
-      <details>
-        <summary data-i18n="panel.image">Reference image</summary>
-        <div class="form">
-          <div class="info" data-i18n="panel.imageInfo">Put a photo or scanned chart under the grid and trace it. It is saved in the design file but left out of exports.</div>
-          <button class="btn sm" data-act="loadImage" data-i18n="panel.chooseImage">Choose image…</button>
-          <div id="imgControls" hidden>
-            <label class="check"><input type="checkbox" id="imgShow"> <span data-i18n="panel.imgShow">Show</span></label>
-            <label><span data-i18n="panel.imgOpacity">Opacity</span> <input type="range" id="imgOpacity" min="0.05" max="1" step="0.05"></label>
-            <label><span data-i18n="panel.imgScale">Size</span> <input type="range" id="imgScale" min="0.1" max="4" step="0.01"></label>
-            <label><span data-i18n="panel.imgX">Move ↔</span> <input type="range" id="imgX" min="-1" max="1" step="0.005"></label>
-            <label><span data-i18n="panel.imgY">Move ↕</span> <input type="range" id="imgY" min="-1" max="1" step="0.005"></label>
-            <div class="row gap"><button class="btn sm" data-act="zoomImage" data-i18n="panel.zoomImage">Zoom to image</button><button class="btn sm" data-act="removeImage" data-i18n="panel.removeImage">Remove</button></div>
-          </div>
-        </div>
-      </details>
-
-      <details open>
-        <summary data-i18n="panel.key">Stitch key</summary>
-        <div id="legend" class="legend"></div>
-      </details>
-
-      <details id="writtenBox">
-        <summary data-i18n="panel.written">Written instructions (draft)</summary>
-        <pre id="written" class="written"></pre>
-        <button class="btn sm" data-act="copyWritten" data-i18n="panel.copyText">Copy text</button>
-      </details>
-    </aside>
+  <main>
+    <h1>Microcheted has moved</h1>
+    <p>New address: <a href="https://microcheted.impatientbeaststudios.com/">microcheted.impatientbeaststudios.com</a></p>
+    <p lang="lv">Microcheted ir pārcēlies uz jaunu adresi.</p>
   </main>
-
-  <div class="backdrop" id="backdrop"></div>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-
-  <input type="file" id="fileOpen" accept=".json,application/json" hidden>
-  <input type="file" id="fileImage" accept="image/*" hidden>
-
-  <dialog id="dlgNew">
-    <form method="dialog" class="dialog">
-      <h2 data-i18n="new.title">New chart</h2>
-      <label><span data-i18n="new.name">Name</span> <input name="name"></label>
-      <fieldset class="modes">
-        <label><input type="radio" name="mode" value="rect" checked><span><b data-i18n="new.rows">Rows</b><small data-i18n="new.rowsDesc">Flat pieces worked back and forth: blankets, scarves, stitch patterns.</small></span></label>
-        <label><input type="radio" name="mode" value="round"><span><b data-i18n="new.rounds">Rounds</b><small data-i18n="new.roundsDesc">Worked from the center out: doilies, hats, amigurumi, coasters.</small></span></label>
-        <label><input type="radio" name="mode" value="filet"><span><b data-i18n="new.filet">Filet grid</b><small data-i18n="new.filetDesc">Rows of filled blocks and open mesh.</small></span></label>
-        <label><input type="radio" name="mode" value="knit"><span><b data-i18n="new.knit">Knitting</b><small data-i18n="new.knitDesc">Knitting chart: knit, purl, lace, cables and colorwork.</small></span></label>
-      </fieldset>
-      <div class="grid2" data-for="rect">
-        <label><span data-i18n="new.stitches">Stitches</span> <input type="number" name="cols" value="30" min="1" max="400"></label>
-        <label><span data-i18n="new.rows">Rows</span> <input type="number" name="rows" value="20" min="1" max="400"></label>
-      </div>
-      <label class="check-row" data-for="knit" hidden><input type="checkbox" name="knitRound"> <span data-i18n="new.knitRound">Worked in the round (every row is read right to left)</span></label>
-      <div class="grid2" data-for="round" hidden>
-        <label><span data-i18n="new.rounds">Rounds</span> <input type="number" name="rings" value="8" min="1" max="80"></label>
-        <label><span data-i18n="panel.start">Stitches in round 1</span> <input type="number" name="start" value="6" min="1" max="200"></label>
-        <label><span data-i18n="panel.inc">Added per round</span> <input type="number" name="inc" value="6" min="0" max="200"></label>
-      </div>
-      <p class="muted small" data-i18n="new.warn">This replaces the chart on screen. Save it first if you want to keep it.</p>
-      <div class="row end gap">
-        <button value="cancel" class="btn" data-i18n="new.cancel">Cancel</button>
-        <button value="ok" class="btn primary" data-i18n="new.create">Create</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="dlgHelp">
-    <form method="dialog" class="dialog help">
-      <h2 data-i18n="help.title">How to use Microcheted</h2>
-      <p data-i18n="help.intro"></p>
-      <div class="cols2">
-        <ul class="keys">
-          <li data-i18n-html="help.k.draw"></li><li data-i18n-html="help.k.erase"></li><li data-i18n-html="help.k.fill"></li>
-          <li data-i18n-html="help.k.pick"></li><li data-i18n-html="help.k.select"></li><li data-i18n-html="help.k.zoom"></li>
-          <li data-i18n-html="help.k.pan"></li><li data-i18n-html="help.k.rotate"></li><li data-i18n-html="help.k.preview"></li>
-          <li data-i18n-html="help.k.check"></li><li data-i18n-html="help.k.counter"></li>
-        </ul>
-        <ul class="keys">
-          <li data-i18n-html="help.k.undo"></li>
-          <li data-i18n-html="help.k.clip"></li>
-          <li data-i18n-html="help.k.del"></li><li data-i18n-html="help.k.esc"></li>
-          <li data-i18n-html="help.k.wheel"></li><li data-i18n-html="help.k.fit"></li>
-          <li data-i18n-html="help.k.file"></li>
-        </ul>
-      </div>
-      <p data-i18n-html="help.knit"></p>
-      <p data-i18n-html="help.save"></p>
-      <p data-i18n-html="help.donate"></p>
-      <div class="row end"><button class="btn primary" value="ok" data-i18n="help.ok">Got it</button></div>
-    </form>
-  </dialog>
-
-  <script src="js/i18n.js"></script>
-  <script src="js/symbols.js"></script>
-  <script src="js/preview.js"></script>
-  <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microcheted has moved</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="https://microcheted.impatientbeaststudios.com/">
+<script>
+  // Hand the autosaved chart and language to the new address (see js/move.js there),
+  // then go. Storage is per address, so without this the chart would seem lost.
+  (function () {
+    var target = 'https://microcheted.impatientbeaststudios.com/' + location.search + location.hash
+    try {
+      var doc = localStorage.getItem('microcheted.autosave.v1')
+      var lang = localStorage.getItem('microcheted.lang')
+      if (doc || lang) window.name = 'microcheted-move:' + JSON.stringify({ doc: doc, lang: lang })
+    } catch (e) {}
+    location.replace(target)
+  })()
+</script>
+<meta http-equiv="refresh" content="5; url=https://microcheted.impatientbeaststudios.com/">
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #faf7f2; color: #2b2420; font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Arial, sans-serif; text-align: center; padding: 16px; }
+  a { color: #b4532a; font-weight: 600; }
+  @media (prefers-color-scheme: dark) { body { background: #1c1917; color: #e7e5e4; } a { color: #f0a27a; } }
+</style>
+</head>
+<body>
+  <main>
+    <h1>Microcheted has moved</h1>
+    <p>New address: <a href="https://microcheted.impatientbeaststudios.com/">microcheted.impatientbeaststudios.com</a></p>
+    <p lang="lv">Microcheted ir pārcēlies uz jaunu adresi.</p>
+  </main>
+</body>
+</html>
